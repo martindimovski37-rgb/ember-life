@@ -545,7 +545,7 @@ export function recommendSplit(kcal, maint){
   const c = Math.max(0, Math.round((kcal - 4 * p - 9 * fat) / 4));
   return { kcal, p, c, fat };
 }
-const TOL = 2;   /* whole grams move calories in steps of 4 or 9, so "exact" means within 2 kcal */
+const TOL = 15;   /* a split within 15 kcal of the target counts as matching */
 
 export function TargetsForm({ onSaved }){
   const t0 = getTargets();
@@ -589,7 +589,7 @@ export function TargetsForm({ onSaved }){
       </div>
       <div class="mrows">${row('p', 'Protein', 'mp', 4)}${row('c', 'Carbs', 'mc', 4)}${row('fat', 'Fat', 'mf', 9)}</div>
       ${r.kcal > 0 && (Math.abs(left) <= TOL
-        ? html`<p class="sum-line"><span>${o.mode === 'rec' ? (maint ? 'Protein from your weight, fat about 25%, carbs the rest' : 'Add body details for a protein amount based on your weight') : 'Adds up'}</span><b class="ok">= ${kc(r.kcal)} kcal ✓</b></p>`
+        ? html`<p class="sum-line"><span>${o.mode === 'rec' ? (maint ? 'Protein from your weight, fat about 25%, carbs the rest' : 'Add body details for a protein amount based on your weight') : left === 0 ? 'Adds up exactly' : 'Close enough (within ' + TOL + ' kcal)'}</span><b class="ok">${kc(sum)} kcal ✓</b></p>`
         : html`<p class="sum-line"><span>${kc(sum)} of ${kc(r.kcal)} kcal</span><b class="bad">${left > 0 ? kc(left) + ' kcal left to assign' : kc(-left) + ' kcal too many'}</b></p>`)}
     </div>`;
   };

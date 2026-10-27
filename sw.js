@@ -1,6 +1,6 @@
 /* Ember Life offline cache. Network first so updates show up right away; the cache is the fallback
    when there's no signal (e.g. in the gym). Bump VERSION when files are added. */
-const VERSION = 'ember-life-4';
+const VERSION = 'ember-life-5';
 const SHELL = ['./', 'index.html', 'css/app.css', 'vendor/preact-htm.umd.js', 'js/main.js', 'js/app.js', 'js/lib.js', 'js/store.js', 'js/planner.js', 'js/diet.js', 'vendor/zxing.min.js',
   'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 
