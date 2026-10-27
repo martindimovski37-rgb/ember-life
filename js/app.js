@@ -2,15 +2,16 @@
 import { html, useState, useEffect, useRef, Ico, UI, Ring, dayKey, fmtLong, plural, scrollTop } from './lib.js';
 import { store, sync, deviceGet, deviceSet } from './store.js';
 import { plannerCtx, PlannerTab, PlanItems, RequiredSheet } from './planner.js';
+import { DietTab } from './diet.js';
 
-export const VERSION = '1.0 · step 1';
+export const VERSION = '1.1 · step 2';
 const TABS = [['today', 'Today', UI.sun], ['planner', 'Planner', UI.grid], ['diet', 'Diet', UI.diet], ['gym', 'Gym', UI.gym]];
 const ALL_TABS = TABS.map(t => t[0]).concat(['settings']);
 
 export function App(){
   const [, setVersion] = useState(0);
   const [tab, setTab] = useState(() => { const h = (location.hash || '').slice(1); return ALL_TABS.includes(h) ? h : 'today'; });
-  const [ui, setUiState] = useState({ sub: 'plan', edit: null, energy: null, focusAct: null });
+  const [ui, setUiState] = useState({ sub: 'plan', edit: null, energy: null, focusAct: null, dsub: 'meals', dedit: null });
   const [toast, setToast] = useState(null);
   const [sheet, setSheet] = useState(null);
   const [today, setToday] = useState(dayKey());
@@ -36,6 +37,7 @@ export function App(){
   const go = t => {
     setTab(t);
     if (t === 'planner') setUi({ edit: null });
+    if (t === 'diet') setUi({ dedit: null });
     try { history.replaceState(null, '', '#' + t); } catch (e){}
     scrollTop();
   };
@@ -45,7 +47,7 @@ export function App(){
 
   let body;
   if (tab === 'planner') body = html`<${PlannerTab} ctx=${p}/>`;
-  else if (tab === 'diet') body = html`<${Soon} title="Diet" step="2 and 3" text="Your food library, saved meals, daily log and weight come next."/>`;
+  else if (tab === 'diet') body = html`<${DietTab} app=${app} ui=${ui} setUi=${setUi}/>`;
   else if (tab === 'gym') body = html`<${Soon} title="Gym" step="4" text="Workouts, routines, the rest timer and your records come after the diet section."/>`;
   else if (tab === 'settings') body = html`<${SettingsView} app=${app}/>`;
   else body = html`<${TodayView} app=${app}/>`;

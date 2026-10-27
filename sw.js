@@ -1,7 +1,7 @@
 /* Ember Life offline cache. Network first so updates show up right away; the cache is the fallback
    when there's no signal (e.g. in the gym). Bump VERSION when files are added. */
-const VERSION = 'ember-life-1';
-const SHELL = ['./', 'index.html', 'css/app.css', 'vendor/preact-htm.umd.js', 'js/main.js', 'js/app.js', 'js/lib.js', 'js/store.js', 'js/planner.js',
+const VERSION = 'ember-life-2';
+const SHELL = ['./', 'index.html', 'css/app.css', 'vendor/preact-htm.umd.js', 'js/main.js', 'js/app.js', 'js/lib.js', 'js/store.js', 'js/planner.js', 'js/diet.js', 'vendor/zxing.min.js',
   'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
@@ -15,7 +15,7 @@ self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
   const own = url.origin === location.origin;
   const font = url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com';
-  if (!own && !font) return;   /* GitHub, USDA, Claude: always live */
+  if (!own && !font) return;   /* GitHub, USDA, Open Food Facts, Claude: always live */
   e.respondWith(
     fetch(e.request).then(res => {
       if (res.ok || res.type === 'opaque'){ const copy = res.clone(); caches.open(VERSION).then(c => c.put(e.request, copy)); }
