@@ -451,9 +451,79 @@ function Scanner({ close, onCode }){
   </div>`;
 }
 
+/* ---------- Body + goal ----------
+   settings/body = { sex, age, height, activity }. Weight is the latest weigh-in.
+   Maintenance = Mifflin-St Jeor × activity. 7,700 kcal ≈ 1 kg of body weight. */
+export const ACTIVITY = [['sedentary', 'Mostly sitting', 'Desk job, little exercise', 1.2], ['light', 'Lightly active', 'Training 1–3 times a week', 1.375],
+  ['moderate', 'Moderately active', 'Training 3–5 times a week', 1.55], ['very', 'Very active', 'Training 6–7 times a week, or a physical job', 1.725],
+  ['extra', 'Extremely active', 'Hard training and a physical job', 1.9]];
+export const latestWeight = () => { const w = store.list('weights/').sort((a, b) => a.date < b.date ? 1 : -1)[0]; return w ? w.kg : null; };
+export function maintenance(){
+  const b = store.get('settings/body'), w = latestWeight();
+  if (!b || !w || !b.age || !b.height) return null;
+  const act = (ACTIVITY.find(a => a[0] === b.activity) || ACTIVITY[2])[3];
+  const bmr = 10 * w + 6.25 * b.height - 5 * b.age + (b.sex === 'female' ? -161 : 5);
+  return { kcal: Math.round(bmr * act / 10) * 10, w };
+}
+/* What a calorie target means: cut, maintain or bulk, and roughly how fast */
+export function goalFor(kcal, maint){
+  if (!maint || !(kcal > 0)) return null;
+  const diff = kcal - maint.kcal, perWeek = diff * 7 / 7700;
+  const kind = Math.abs(diff) <= maint.kcal * 0.05 ? 'maintain' : diff < 0 ? 'cut' : 'bulk';
+  const fast = kind === 'cut' ? -perWeek > maint.w * 0.01 : kind === 'bulk' ? perWeek > maint.w * 0.005 : false;
+  return { kind, diff, perWeek, fast };
+}
+const signed = (n, d = 0) => (n > 0 ? '+' : n < 0 ? '−' : '±') + Math.abs(n).toFixed(d);
+export const goalTitle = g => g.kind === 'maintain' ? 'Maintaining' : g.kind === 'cut' ? 'Cutting' : 'Bulking';
+export const goalRate = g => g.kind === 'maintain' ? 'weight stays about the same' : '≈ ' + signed(g.perWeek, 2).replace(/0$/, '') + ' kg per week';
+export function GoalBadge({ g, full }){
+  if (!g) return null;
+  return html`<div class=${'goal goal-' + g.kind}>
+    <span class="goal-t">${goalTitle(g)} · ${goalRate(g)}</span>
+    ${full && html`<span class="goal-s">${signed(Math.round(g.diff))} kcal a day vs maintenance${g.fast ? (g.kind === 'cut' ? ' · on the fast side, muscle is at risk' : ' · on the fast side, expect extra fat gain') : ''}</span>`}
+  </div>`;
+}
+
+function BodyForm({ onDone }){
+  const b0 = store.get('settings/body') || { sex: 'male', age: '', height: '', activity: 'moderate' };
+  const [b, setB] = useState({ sex: b0.sex, age: b0.age ? String(b0.age) : '', height: b0.height ? String(b0.height) : '', activity: b0.activity });
+  const w0 = latestWeight();
+  const [kg, setKg] = useState('');
+  const [err, setErr] = useState('');
+  const set = (k, v) => { setB(prev => Object.assign({}, prev, { [k]: v })); setErr(''); };
+  const save = () => {
+    const age = num(b.age), height = num(b.height), w = w0 || num(kg);
+    if (!age || age < 13 || age > 100){ setErr('Enter your age in years.'); return; }
+    if (!height || height < 120 || height > 230){ setErr('Enter your height in cm, like 180.'); return; }
+    if (!w || w < 25 || w > 350){ setErr('Enter your weight in kg.'); return; }
+    if (!w0) store.set('weights/' + dayKey(), { date: dayKey(), kg: Math.round(w * 10) / 10 });
+    store.set('settings/body', { sex: b.sex, age: Math.round(age), height: Math.round(height), activity: b.activity });
+    onDone && onDone();
+  };
+  return html`<div class="stack-sm body-form">
+    <div class="seg inset" role="group" aria-label="Sex">
+      <button aria-pressed=${String(b.sex === 'male')} onClick=${() => set('sex', 'male')}>Male</button>
+      <button aria-pressed=${String(b.sex === 'female')} onClick=${() => set('sex', 'female')}>Female</button>
+    </div>
+    <div class=${'mgrid ' + (w0 ? 'two' : 'three')}>
+      <label class="mfield"><span class="label">Age</span><span class="mbox"><input inputmode="numeric" value=${b.age} onInput=${e => set('age', e.target.value)}/><span class="unit">y</span></span></label>
+      <label class="mfield"><span class="label">Height</span><span class="mbox"><input inputmode="decimal" value=${b.height} onInput=${e => set('height', e.target.value)}/><span class="unit">cm</span></span></label>
+      ${!w0 && html`<label class="mfield"><span class="label">Weight</span><span class="mbox"><input inputmode="decimal" value=${kg} onInput=${e => { setKg(e.target.value); setErr(''); }}/><span class="unit">kg</span></span></label>`}
+    </div>
+    ${w0 && html`<p class="hint">Weight: ${w0.toFixed(1)} kg, from your latest weigh-in. New weigh-ins update this on their own.</p>`}
+    <span class="label">How active are you?</span>
+    <div class="list">${ACTIVITY.map(a => html`<button key=${a[0]} class="act-pick" aria-pressed=${String(b.activity === a[0])} onClick=${() => set('activity', a[0])}>
+      <span class="col grow"><span class="row-title">${a[1]}</span><span class="row-sub wrap">${a[2]}</span></span>
+      <span class=${'radio' + (b.activity === a[0] ? ' on' : '')}></span>
+    </button>`)}</div>
+    ${err && html`<p class="status bad">${err}</p>`}
+    <button class="btn btn-solid sm" onClick=${save}>Save body details</button>
+  </div>`;
+}
+
 /* ---------- Targets ----------
-   settings/targets = { split, base, train, rest }, each { kcal, p, c, fat }. With split on, a day uses train or rest
-   depending on its log's `training` flag (the Gym tab sets it in step 4). */
+   settings/targets = { split, base, train, rest }, each { kcal, p, c, fat, mode: rec|custom }. With split on, a day uses
+   train or rest depending on its log's `training` flag (the Gym tab sets it in step 4). Splits must add up to the calories. */
 const NO_T = { kcal: 0, p: 0, c: 0, fat: 0 };
 export const getTargets = () => Object.assign({ split: false, base: NO_T, train: NO_T, rest: NO_T }, store.get('settings/targets') || {});
 export const hasTargets = t => [t.base, t.train, t.rest].some(x => x && x.kcal > 0);
@@ -466,40 +536,78 @@ export function targetsFor(date){
 export const hitKcal = (tot, t) => t.kcal > 0 && Math.abs(tot.kcal - t.kcal) <= t.kcal * 0.1;
 export const hitProtein = (tot, t) => t.p > 0 && tot.p >= t.p * 0.9;
 
+/* Recommended: protein per kg (2.2 cutting, 2.0 maintaining, 1.8 bulking), fat 25% (at least 0.6 g/kg), carbs the rest */
+export function recommendSplit(kcal, maint){
+  const g = goalFor(kcal, maint), w = maint && maint.w;
+  let p = w ? Math.round(w * (g && g.kind === 'cut' ? 2.2 : g && g.kind === 'bulk' ? 1.8 : 2.0)) : Math.round(kcal * 0.3 / 4);
+  let fat = Math.round(Math.max(kcal * 0.25 / 9, w ? w * 0.6 : 0));
+  if (4 * p + 9 * fat > kcal){ p = Math.round(kcal * 0.35 / 4); fat = Math.round(kcal * 0.25 / 9); }
+  const c = Math.max(0, Math.round((kcal - 4 * p - 9 * fat) / 4));
+  return { kcal, p, c, fat };
+}
+const TOL = 2;   /* whole grams move calories in steps of 4 or 9, so "exact" means within 2 kcal */
+
 export function TargetsForm({ onSaved }){
   const t0 = getTargets();
-  const toS = o => ({ kcal: o.kcal ? String(o.kcal) : '', p: o.p ? String(o.p) : '', c: o.c ? String(o.c) : '', fat: o.fat ? String(o.fat) : '' });
+  const maint = maintenance();
+  const [editBody, setEditBody] = useState(!store.get('settings/body'));
+  const toS = o => ({ kcal: o.kcal ? String(o.kcal) : '', p: o.p ? String(o.p) : '', c: o.c ? String(o.c) : '', fat: o.fat ? String(o.fat) : '', mode: o.mode || (o.kcal ? 'custom' : 'rec') });
   const [split, setSplit] = useState(t0.split);
   const [v, setV] = useState(() => ({ base: toS(t0.base), train: toS(t0.split ? t0.train : t0.base), rest: toS(t0.split ? t0.rest : t0.base) }));
   const [err, setErr] = useState('');
-  const set = (which, k, val) => { setV(prev => Object.assign({}, prev, { [which]: Object.assign({}, prev[which], { [k]: val }) })); setErr(''); };
-  const parse = o => ({ kcal: num(o.kcal) || 0, p: num(o.p) || 0, c: num(o.c) || 0, fat: num(o.fat) || 0 });
+  const set = (which, patch) => { setV(prev => Object.assign({}, prev, { [which]: Object.assign({}, prev[which], patch) })); setErr(''); };
+  const resolve = o => {
+    const kcal = Math.round(num(o.kcal) || 0);
+    if (o.mode === 'rec') return Object.assign(kcal ? recommendSplit(kcal, maint) : NO_T, { mode: 'rec' });
+    return { kcal, p: Math.round(num(o.p) || 0), c: Math.round(num(o.c) || 0), fat: Math.round(num(o.fat) || 0), mode: 'custom' };
+  };
+  const groups = split ? ['train', 'rest'] : ['base'];
+  const res = Object.fromEntries(groups.map(w => [w, resolve(v[w])]));
+  const balanced = w => res[w].kcal > 0 && Math.abs(fromMacros(res[w]) - res[w].kcal) <= TOL;
   const save = () => {
-    const sets = split ? ['train', 'rest'] : ['base'];
-    if (sets.some(w => ['kcal', 'p', 'c', 'fat'].some(k => v[w][k] !== '' && num(v[w][k]) == null))){ setErr('Use numbers only.'); return; }
-    sets.forEach(w => { const o = parse(v[w]); if (!o.kcal && (o.p || o.c || o.fat)) o.kcal = Math.round(fromMacros(o)); v[w] = toS(o); });
-    const base = split ? parse(v.train) : parse(v.base);
-    store.set('settings/targets', { split, base, train: split ? parse(v.train) : base, rest: split ? parse(v.rest) : base });
+    if (groups.some(w => !(res[w].kcal > 0))){ setErr('Enter your daily calories.'); return; }
+    if (groups.some(w => !balanced(w))){ setErr('Protein, carbs and fat have to add up to your calories.'); return; }
+    const base = res[groups[0]];
+    store.set('settings/targets', { split, base, train: split ? res.train : base, rest: split ? res.rest : base });
     onSaved && onSaved();
   };
-  const group = (which, title) => {
-    const o = parse(v[which]), off = o.kcal && (o.p || o.c || o.fat) ? kcalCheck(o) : null;
+  const group = (w, title) => {
+    const o = v[w], r = res[w], sum = fromMacros(r), left = r.kcal - sum, g = goalFor(r.kcal, maint);
+    const row = (k, label, cls, mult) => html`<div class="mrow">
+      <span class="mrow-l"><i class=${'dot ' + cls}></i>${label}</span>
+      <span class=${'mbox' + (o.mode === 'rec' ? ' ro' : '')}><input inputmode="numeric" autocomplete="off" aria-label=${label + ' in grams'} readOnly=${o.mode === 'rec'}
+        value=${o.mode === 'rec' ? (r.kcal ? String(r[k]) : '') : o[k]} placeholder="0" onInput=${e => set(w, { [k]: e.target.value })}/><span class="unit">g</span></span>
+      <span class="mrow-k">${kc(r[k] * mult)} kcal</span>
+    </div>`;
     return html`<div class="stack-sm">
       ${title && html`<h3 class="label">${title}</h3>`}
-      <div class="mgrid">${[['kcal', 'Calories', 'kcal'], ['p', 'Protein', 'g'], ['c', 'Carbs', 'g'], ['fat', 'Fat', 'g']].map(([k, label, unit]) => html`
-        <label key=${k} class="mfield"><span class="label">${label}</span><span class="mbox"><input inputmode="decimal" autocomplete="off" placeholder=${k === 'kcal' ? 'auto' : '0'} value=${v[which][k]} onInput=${e => set(which, k, e.target.value)}/><span class="unit">${unit}</span></span></label>`)}</div>
-      ${off != null && html`<p class="warn"><${Ico} d=${UI.alert} size=${16}/>These macros add up to about ${off} kcal, not ${kc(o.kcal)}.</p>`}
+      <label class="mfield"><span class="label">Calories</span><span class="mbox"><input inputmode="numeric" autocomplete="off" placeholder=${maint ? String(maint.kcal) : '2000'} value=${o.kcal} onInput=${e => set(w, { kcal: e.target.value })}/><span class="unit">kcal</span></span></label>
+      <${GoalBadge} g=${g} full=${true}/>
+      <div class="seg inset" role="group" aria-label="Macro split">
+        <button aria-pressed=${String(o.mode === 'rec')} onClick=${() => set(w, { mode: 'rec' })}>Recommended</button>
+        <button aria-pressed=${String(o.mode === 'custom')} onClick=${() => { const rr = r.kcal ? (o.mode === 'rec' ? r : resolve(o)) : NO_T; set(w, { mode: 'custom', p: rr.p ? String(rr.p) : o.p, c: rr.c ? String(rr.c) : o.c, fat: rr.fat ? String(rr.fat) : o.fat }); }}>Custom</button>
+      </div>
+      <div class="mrows">${row('p', 'Protein', 'mp', 4)}${row('c', 'Carbs', 'mc', 4)}${row('fat', 'Fat', 'mf', 9)}</div>
+      ${r.kcal > 0 && (Math.abs(left) <= TOL
+        ? html`<p class="sum-line"><span>${o.mode === 'rec' ? (maint ? 'Protein from your weight, fat about 25%, carbs the rest' : 'Add body details for a protein amount based on your weight') : 'Adds up'}</span><b class="ok">= ${kc(r.kcal)} kcal ✓</b></p>`
+        : html`<p class="sum-line"><span>${kc(sum)} of ${kc(r.kcal)} kcal</span><b class="bad">${left > 0 ? kc(left) + ' kcal left to assign' : kc(-left) + ' kcal too many'}</b></p>`)}
     </div>`;
   };
   return html`<div class="stack-sm">
+    <div class="body-sum">
+      ${maint && !editBody
+        ? html`<p class="hint">Maintenance ≈ <b class="wdiff">${kc(maint.kcal)} kcal</b> · ${(() => { const b = store.get('settings/body'); return maint.w.toFixed(1) + ' kg, ' + b.height + ' cm, ' + b.age + ' y, ' + (ACTIVITY.find(a => a[0] === b.activity) || ACTIVITY[2])[1].toLowerCase(); })()}</p>
+               <button class="link sm-link" onClick=${() => setEditBody(true)}>Edit body details</button>`
+        : html`<p class="hint">Your body details tell the app your maintenance calories, so it can say whether a target is a cut, maintenance or a bulk.</p>
+               <${BodyForm} onDone=${() => setEditBody(false)}/>`}
+    </div>
     <button class="switch-row inset" aria-pressed=${String(split)} onClick=${() => setSplit(!split)}>
       <span class="col grow"><span class="row-title">Different targets on training days</span><span class="row-sub wrap">Each day in the log gets a training / rest switch</span></span>
       <span class=${'switch' + (split ? ' on' : '')}><span class="knob"></span></span>
     </button>
     ${split ? html`${group('train', 'Training day')}${group('rest', 'Rest day')}` : group('base', '')}
-    <p class="hint">Leave calories empty to have them worked out from protein, carbs and fat.</p>
     ${err && html`<p class="status bad">${err}</p>`}
-    <button class="btn btn-solid" onClick=${save}>Save targets</button>
+    <button class="btn btn-solid" disabled=${!groups.every(balanced)} onClick=${save}>Save targets</button>
   </div>`;
 }
 
@@ -551,6 +659,7 @@ function LogView({ env, ui, setUi }){
         ${target.kcal > 0 ? html`<span class=${'left' + (left < 0 ? ' over' : '')}>${left >= 0 ? kc(left) + ' left' : kc(-left) + ' over'}</span>`
           : html`<button class="link" onClick=${() => setSheet({ kind: 'targets' })}>Set targets</button>`}
       </div>
+      <${GoalBadge} g=${goalFor(target.kcal, maintenance())}/>
       <div class="bar-track big"><span class=${'bar-fill mk' + (target.kcal > 0 && tot.kcal > target.kcal * 1.1 ? ' over' : '')} style=${'width:' + (target.kcal > 0 ? Math.min(100, tot.kcal / target.kcal * 100) : 0) + '%'}></span></div>
       <div class="tbars">
         <${MacroBar} label="Protein" val=${tot.p} target=${target.p} unit="g" cls="mp"/>
