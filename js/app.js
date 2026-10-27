@@ -2,16 +2,16 @@
 import { html, useState, useEffect, useRef, Ico, UI, Ring, dayKey, fmtLong, plural, scrollTop } from './lib.js';
 import { store, sync, deviceGet, deviceSet } from './store.js';
 import { plannerCtx, PlannerTab, PlanItems, RequiredSheet } from './planner.js';
-import { DietTab } from './diet.js';
+import { DietTab, TargetsForm, dayTotals, targetsFor, kc, g1 } from './diet.js';
 
-export const VERSION = '1.1 · step 2';
+export const VERSION = '1.2 · step 3';
 const TABS = [['today', 'Today', UI.sun], ['planner', 'Planner', UI.grid], ['diet', 'Diet', UI.diet], ['gym', 'Gym', UI.gym]];
 const ALL_TABS = TABS.map(t => t[0]).concat(['settings']);
 
 export function App(){
   const [, setVersion] = useState(0);
   const [tab, setTab] = useState(() => { const h = (location.hash || '').slice(1); return ALL_TABS.includes(h) ? h : 'today'; });
-  const [ui, setUiState] = useState({ sub: 'plan', edit: null, energy: null, focusAct: null, dsub: 'meals', dedit: null });
+  const [ui, setUiState] = useState({ sub: 'plan', edit: null, energy: null, focusAct: null, dsub: 'log', dedit: null, ddate: null });
   const [toast, setToast] = useState(null);
   const [sheet, setSheet] = useState(null);
   const [today, setToday] = useState(dayKey());
@@ -104,6 +104,7 @@ function TodayView({ app }){
   const planToday = cur.set && cur.date === today;
   const items = planToday ? cur.items || [] : [];
   const nDone = items.filter(i => (cur.done || []).includes(i.id)).length;
+  const tot = dayTotals(today), tg = targetsFor(today);
   return html`<div class="stack">
     <header class="head">
       <div class="grow col"><span class="eyebrow">${fmtLong(today)}</span><h1>Today</h1></div>
@@ -113,11 +114,11 @@ function TodayView({ app }){
 
     <section class="card" aria-label="Today at a glance">
       <div class="rings">
-        <button class="ring" onClick=${() => go('diet')}><${Ring} value=${0} max=${1} color="var(--ring-kcal)"/><span class="ring-val">–</span><span class="ring-sub">kcal</span></button>
-        <button class="ring" onClick=${() => go('diet')}><${Ring} value=${0} max=${1} color="var(--ring-protein)"/><span class="ring-val">–</span><span class="ring-sub">protein</span></button>
+        <button class="ring" onClick=${() => go('diet')}><${Ring} value=${tot.kcal} max=${tg.kcal} color="var(--ring-kcal)"/><span class="ring-val">${kc(tot.kcal)}</span><span class="ring-sub">${tg.kcal ? 'of ' + kc(tg.kcal) + ' kcal' : 'kcal'}</span></button>
+        <button class="ring" onClick=${() => go('diet')}><${Ring} value=${tot.p} max=${tg.p} color="var(--ring-protein)"/><span class="ring-val">${g1(tot.p)} g</span><span class="ring-sub">${tg.p ? 'of ' + g1(tg.p) + ' g protein' : 'protein'}</span></button>
         <button class="ring" onClick=${() => go('gym')}><${Ring} value=${0} max=${1} color="var(--ring-gym)"/><span class="ring-val">–</span><span class="ring-sub">gym</span></button>
       </div>
-      <p class="hint">Calories, protein and your workout show up here once Diet and Gym are built.</p>
+      ${!tg.kcal && html`<p class="hint">Set your calorie and protein targets in Settings to fill the rings.</p>`}
     </section>
 
     <section class="card">
@@ -155,6 +156,10 @@ function SettingsView({ app }){
         ${THEMES.map(t => html`<button key=${t[0]} aria-pressed=${String(settings.theme === t[0])} onClick=${() => setTheme(t[0])}>${t[1]}</button>`)}
       </div>
       <p class="hint">Auto follows your iPhone or Mac.</p>
+    </section>
+    <section class="card">
+      <h2 class="card-title">Daily targets</h2>
+      <${TargetsForm} onSaved=${() => showToast('Targets saved.')}/>
     </section>
     <${SyncCard} showToast=${showToast}/>
     <${BackupCard} app=${app}/>

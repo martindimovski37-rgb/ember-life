@@ -2,7 +2,7 @@
    Docs: foods/<id> = { id, name, brand, state: raw|cooked|'', kcal, p, c, fat (per 100 g), source, ref, barcode }
          meals/<id> = { id, name, tag, items: [{ id, foodId, g }] }
    Meals only point at foods, so editing a food changes every meal that uses it. */
-import { html, useState, useEffect, useRef, Ico, UI, uid, clone, plural, scrollTop } from './lib.js';
+import { html, useState, useEffect, useRef, Ico, UI, uid, clone, plural, scrollTop, dayKey, parseKey, fmtShort } from './lib.js';
 import { store, deviceGet } from './store.js';
 
 /* ---------- Math ---------- */
@@ -21,6 +21,7 @@ export const g1 = n => String(Math.round(n * 10) / 10);
 export const kc = n => String(Math.round(n));
 const num = s => { const v = parseFloat(String(s == null ? '' : s).replace(',', '.')); return isFinite(v) && v >= 0 ? v : null; };
 const macroLine = m => 'P ' + g1(m.p) + ' · C ' + g1(m.c) + ' · F ' + g1(m.fat);
+const fullLine = m => kc(m.kcal) + ' kcal · ' + macroLine(m);
 
 export const MEAL_TAGS = [['breakfast', 'Breakfast'], ['lunch', 'Lunch'], ['dinner', 'Dinner'], ['snack', 'Snack']];
 const STATES = [['raw', 'Raw'], ['cooked', 'Cooked'], ['', 'Neither']];
@@ -92,10 +93,10 @@ async function aiEstimate(q){
 }
 
 /* ---------- Diet tab ---------- */
-const SUBS = [['log', 'Log'], ['meals', 'Meals'], ['foods', 'Foods']];
+const SUBS = [['log', 'Log'], ['meals', 'Meals'], ['foods', 'Foods'], ['weight', 'Weight']];
 
 export function DietTab({ app, ui, setUi }){
-  const sub = ui.dsub || 'meals';
+  const sub = ui.dsub || 'log';
   const e = ui.dedit;
   const close = () => { setUi({ dedit: null }); scrollTop(); };
   const open = x => { setUi({ dedit: x }); scrollTop(); };
@@ -111,16 +112,8 @@ export function DietTab({ app, ui, setUi }){
     <div class="seg" role="group" aria-label="Diet section">
       ${SUBS.map(s => html`<button key=${s[0]} aria-pressed=${String(sub === s[0])} onClick=${() => { setUi({ dsub: s[0], dedit: null }); scrollTop(); }}>${s[1]}</button>`)}
     </div>
-    ${sub === 'foods' ? html`<${FoodsView} env=${env}/>` : sub === 'log' ? html`<${LogSoon} setUi=${setUi}/>` : html`<${MealsView} env=${env}/>`}
+    ${sub === 'foods' ? html`<${FoodsView} env=${env}/>` : sub === 'meals' ? html`<${MealsView} env=${env}/>` : sub === 'weight' ? html`<${WeightView} env=${env}/>` : html`<${LogView} env=${env} ui=${ui} setUi=${setUi}/>`}
   </div>`;
-}
-
-function LogSoon({ setUi }){
-  return html`<section class="card">
-    <h2 class="card-title">Daily log comes in step 3</h2>
-    <p class="hint">You’ll tap your saved meals to log them, change portions and see your targets fill up. For now, build up your foods and meals.</p>
-    <button class="btn btn-ghost sm" onClick=${() => setUi({ dsub: 'meals' })}>Go to meals</button>
-  </section>`;
 }
 
 /* ---------- Foods ---------- */
@@ -456,4 +449,300 @@ function Scanner({ close, onCode }){
         <button class="scan-btn" aria-label="Look up number" onClick=${submit}><${Ico} d=${UI.fwd} size=${20}/></button></div>
     </div>
   </div>`;
+}
+
+/* ---------- Targets ----------
+   settings/targets = { split, base, train, rest }, each { kcal, p, c, fat }. With split on, a day uses train or rest
+   depending on its log's `training` flag (the Gym tab sets it in step 4). */
+const NO_T = { kcal: 0, p: 0, c: 0, fat: 0 };
+export const getTargets = () => Object.assign({ split: false, base: NO_T, train: NO_T, rest: NO_T }, store.get('settings/targets') || {});
+export const hasTargets = t => [t.base, t.train, t.rest].some(x => x && x.kcal > 0);
+export function targetsFor(date){
+  const t = getTargets(), log = store.get('log/' + date);
+  if (!t.split) return t.base;
+  return log && log.training ? t.train : t.rest;
+}
+/* A day counts as hit when calories are within 10% and protein reaches 90% of the target */
+export const hitKcal = (tot, t) => t.kcal > 0 && Math.abs(tot.kcal - t.kcal) <= t.kcal * 0.1;
+export const hitProtein = (tot, t) => t.p > 0 && tot.p >= t.p * 0.9;
+
+export function TargetsForm({ onSaved }){
+  const t0 = getTargets();
+  const toS = o => ({ kcal: o.kcal ? String(o.kcal) : '', p: o.p ? String(o.p) : '', c: o.c ? String(o.c) : '', fat: o.fat ? String(o.fat) : '' });
+  const [split, setSplit] = useState(t0.split);
+  const [v, setV] = useState(() => ({ base: toS(t0.base), train: toS(t0.split ? t0.train : t0.base), rest: toS(t0.split ? t0.rest : t0.base) }));
+  const [err, setErr] = useState('');
+  const set = (which, k, val) => { setV(prev => Object.assign({}, prev, { [which]: Object.assign({}, prev[which], { [k]: val }) })); setErr(''); };
+  const parse = o => ({ kcal: num(o.kcal) || 0, p: num(o.p) || 0, c: num(o.c) || 0, fat: num(o.fat) || 0 });
+  const save = () => {
+    const sets = split ? ['train', 'rest'] : ['base'];
+    if (sets.some(w => ['kcal', 'p', 'c', 'fat'].some(k => v[w][k] !== '' && num(v[w][k]) == null))){ setErr('Use numbers only.'); return; }
+    sets.forEach(w => { const o = parse(v[w]); if (!o.kcal && (o.p || o.c || o.fat)) o.kcal = Math.round(fromMacros(o)); v[w] = toS(o); });
+    const base = split ? parse(v.train) : parse(v.base);
+    store.set('settings/targets', { split, base, train: split ? parse(v.train) : base, rest: split ? parse(v.rest) : base });
+    onSaved && onSaved();
+  };
+  const group = (which, title) => {
+    const o = parse(v[which]), off = o.kcal && (o.p || o.c || o.fat) ? kcalCheck(o) : null;
+    return html`<div class="stack-sm">
+      ${title && html`<h3 class="label">${title}</h3>`}
+      <div class="mgrid">${[['kcal', 'Calories', 'kcal'], ['p', 'Protein', 'g'], ['c', 'Carbs', 'g'], ['fat', 'Fat', 'g']].map(([k, label, unit]) => html`
+        <label key=${k} class="mfield"><span class="label">${label}</span><span class="mbox"><input inputmode="decimal" autocomplete="off" placeholder=${k === 'kcal' ? 'auto' : '0'} value=${v[which][k]} onInput=${e => set(which, k, e.target.value)}/><span class="unit">${unit}</span></span></label>`)}</div>
+      ${off != null && html`<p class="warn"><${Ico} d=${UI.alert} size=${16}/>These macros add up to about ${off} kcal, not ${kc(o.kcal)}.</p>`}
+    </div>`;
+  };
+  return html`<div class="stack-sm">
+    <button class="switch-row inset" aria-pressed=${String(split)} onClick=${() => setSplit(!split)}>
+      <span class="col grow"><span class="row-title">Different targets on training days</span><span class="row-sub wrap">Each day in the log gets a training / rest switch</span></span>
+      <span class=${'switch' + (split ? ' on' : '')}><span class="knob"></span></span>
+    </button>
+    ${split ? html`${group('train', 'Training day')}${group('rest', 'Rest day')}` : group('base', '')}
+    <p class="hint">Leave calories empty to have them worked out from protein, carbs and fat.</p>
+    ${err && html`<p class="status bad">${err}</p>`}
+    <button class="btn btn-solid" onClick=${save}>Save targets</button>
+  </div>`;
+}
+
+/* ---------- Daily log ----------
+   log/<date> = { date, training, entries: [{ id, slot, kind: meal|food, ref, name, amount, unit, mealG }]
+   unit = macros for 1 portion (meal) or per 100 g (food), copied when logged so old days never change by themselves. */
+const SLOTS = MEAL_TAGS;
+export const entryMacros = e => e.kind === 'meal' ? { kcal: e.unit.kcal * e.amount, p: e.unit.p * e.amount, c: e.unit.c * e.amount, fat: e.unit.fat * e.amount } : scale(e.unit, e.amount);
+export const dayTotals = date => { const l = store.get('log/' + date); return l ? addUp(l.entries.map(entryMacros)) : ZERO; };
+const PORTIONS = [[0.5, '½'], [1, '1'], [1.5, '1½'], [2, '2']];
+const amountLabel = e => { if (e.kind === 'food') return g1(e.amount) + ' g'; if (e.amount === 1) return ''; const p = PORTIONS.find(x => x[0] === e.amount); return '×' + (p ? p[1] : g1(e.amount)); };
+const dayLabel = (d, today) => d === today ? 'Today' : dayKey(new Date(parseKey(today).getTime() - 864e5)) === d ? 'Yesterday' : fmtShort(d);
+const shiftDay = (d, n) => { const x = parseKey(d); x.setDate(x.getDate() + n); return dayKey(x); };
+
+function MacroBar({ label, val, target, unit, cls }){
+  const pct = target > 0 ? Math.min(100, val / target * 100) : 0;
+  const over = target > 0 && val > target * 1.1;
+  return html`<div class="tbar">
+    <div class="row-between"><span class="tbar-label">${label}</span><span class="tbar-n"><b>${unit === 'kcal' ? kc(val) : g1(val)}</b>${target > 0 ? ' / ' + (unit === 'kcal' ? kc(target) : g1(target)) : ''} ${unit}</span></div>
+    <div class="bar-track"><span class=${'bar-fill ' + cls + (over ? ' over' : '')} style=${'width:' + pct + '%'}></span></div>
+  </div>`;
+}
+
+function LogView({ env, ui, setUi }){
+  const { app } = env;
+  const today = app.today;
+  const date = ui.ddate && ui.ddate <= today ? ui.ddate : today;
+  const setDate = d => setUi({ ddate: d > today ? today : d });
+  const [sheet, setSheet] = useState(null);
+  const log = store.get('log/' + date) || { date, training: false, entries: [] };
+  const t = getTargets();
+  const target = targetsFor(date);
+  const tot = addUp(log.entries.map(entryMacros));
+  const saveLog = next => { if (!next.entries.length && !next.training) store.del('log/' + date); else store.set('log/' + date, next); };
+  const left = target.kcal - tot.kcal;
+  return html`
+    <div class="daynav">
+      <button class="icon-btn" aria-label="Previous day" onClick=${() => setDate(shiftDay(date, -1))}><${Ico} d=${UI.back}/></button>
+      <span class="daynav-label">${dayLabel(date, today)}</span>
+      <button class="icon-btn" aria-label="Next day" disabled=${date >= today} onClick=${() => setDate(shiftDay(date, 1))}><${Ico} d=${UI.fwd}/></button>
+    </div>
+    ${t.split && html`<div class="seg" role="group" aria-label="Day type">
+      <button aria-pressed=${String(!log.training)} onClick=${() => saveLog(Object.assign({}, log, { date, training: false }))}>Rest day</button>
+      <button aria-pressed=${String(!!log.training)} onClick=${() => saveLog(Object.assign({}, log, { date, training: true }))}>Training day</button>
+    </div>`}
+    <section class="card" aria-label="Day totals">
+      <div class="row-between">
+        <span class="tot-kcal">${kc(tot.kcal)} <small>${target.kcal > 0 ? '/ ' + kc(target.kcal) + ' kcal' : 'kcal'}</small></span>
+        ${target.kcal > 0 ? html`<span class=${'left' + (left < 0 ? ' over' : '')}>${left >= 0 ? kc(left) + ' left' : kc(-left) + ' over'}</span>`
+          : html`<button class="link" onClick=${() => setSheet({ kind: 'targets' })}>Set targets</button>`}
+      </div>
+      <div class="bar-track big"><span class=${'bar-fill mk' + (target.kcal > 0 && tot.kcal > target.kcal * 1.1 ? ' over' : '')} style=${'width:' + (target.kcal > 0 ? Math.min(100, tot.kcal / target.kcal * 100) : 0) + '%'}></span></div>
+      <div class="tbars">
+        <${MacroBar} label="Protein" val=${tot.p} target=${target.p} unit="g" cls="mp"/>
+        <${MacroBar} label="Carbs" val=${tot.c} target=${target.c} unit="g" cls="mc"/>
+        <${MacroBar} label="Fat" val=${tot.fat} target=${target.fat} unit="g" cls="mf"/>
+      </div>
+      ${target.kcal > 0 && html`<button class="link sm-link" onClick=${() => setSheet({ kind: 'targets' })}>Edit targets</button>`}
+    </section>
+    ${SLOTS.map(([slot, name]) => {
+      const list = log.entries.filter(e => e.slot === slot);
+      const st = addUp(list.map(entryMacros));
+      return html`<section key=${slot} class="slot">
+        <div class="slot-head"><h2 class="label">${name}</h2>${list.length > 0 && html`<span class="slot-sum">${fullLine(st)}</span>`}</div>
+        ${list.map(e => { const m = entryMacros(e); return html`<button key=${e.id} class="entry" onClick=${() => setSheet({ kind: 'entry', entry: e })}>
+          <span class="entry-name">${e.name}${amountLabel(e) && html` <span class="amt">${amountLabel(e)}</span>`}</span>
+          <span class="entry-sub">${fullLine(m)}</span>
+        </button>`; })}
+        <button class="add-wide sm" onClick=${() => setSheet({ kind: 'add', slot })}>+ Add to ${name.toLowerCase()}</button>
+      </section>`;
+    })}
+    ${sheet && sheet.kind === 'targets' && html`<${Sheet} title="Targets" close=${() => setSheet(null)}><${TargetsForm} onSaved=${() => { setSheet(null); app.showToast('Targets saved.'); }}/><//>`}
+    ${sheet && sheet.kind === 'add' && html`<${AddSheet} env=${env} slot=${sheet.slot} close=${() => setSheet(null)}
+      onLog=${e => { saveLog(Object.assign({}, log, { date, entries: log.entries.concat([e]) })); setSheet(null); app.showToast(e.name + ' logged.'); }}/>`}
+    ${sheet && sheet.kind === 'entry' && html`<${Sheet} title=${sheet.entry.name} close=${() => setSheet(null)}>
+      <${PortionPicker} entry=${sheet.entry} okLabel="Save" onOk=${e => { saveLog(Object.assign({}, log, { entries: log.entries.map(x => x.id === e.id ? e : x) })); setSheet(null); }}/>
+      <div class="seg inset" role="group" aria-label="Move to">${SLOTS.map(([s2, n2]) => html`<button key=${s2} aria-pressed=${String(sheet.entry.slot === s2)}
+        onClick=${() => { saveLog(Object.assign({}, log, { entries: log.entries.map(x => x.id === sheet.entry.id ? Object.assign({}, x, { slot: s2 }) : x) })); setSheet(null); }}>${n2}</button>`)}</div>
+      <button class="btn btn-danger" onClick=${() => {
+        const before = log; saveLog(Object.assign({}, log, { entries: log.entries.filter(x => x.id !== sheet.entry.id) })); setSheet(null);
+        app.showToast(sheet.entry.name + ' removed.', { label: 'Undo', run: () => store.set('log/' + date, before) });
+      }}>Remove from log</button>
+    <//>`}`;
+}
+
+function Sheet({ title, close, children, tall }){
+  return html`<div class="scrim" onClick=${e => { if (e.target === e.currentTarget) close(); }}>
+    <div class=${'sheet' + (tall ? ' tall' : '')} role="dialog" aria-modal="true" aria-label=${title}>
+      <div class="row-between"><h2>${title}</h2><button class="icon-btn" aria-label="Close" onClick=${close}><${Ico} d=${UI.x}/></button></div>
+      ${children}
+    </div>
+  </div>`;
+}
+
+/* Pick what to log: a saved meal (portion) or a single food (grams) */
+function AddSheet({ env, slot, close, onLog }){
+  const [tab, setTab] = useState('meals');
+  const [pick, setPick] = useState(null);
+  const foods = foodMap();
+  const meals = store.list('meals/').sort((a, b) => (a.tag === slot ? 0 : 1) - (b.tag === slot ? 0 : 1) || a.name.localeCompare(b.name));
+  const name = (SLOTS.find(s => s[0] === slot) || ['', ''])[1];
+  if (pick) return html`<${Sheet} title=${pick.name} close=${close}>
+    <${PortionPicker} entry=${pick} okLabel=${'Log to ' + name.toLowerCase()} onOk=${onLog}/>
+    <button class="btn btn-ghost sm" onClick=${() => setPick(null)}>Back</button>
+  <//>`;
+  const fromMeal = m => { const unit = mealTotals(m, foods); const mealG = m.items.reduce((a, it) => a + (Number(it.g) || 0), 0);
+    setPick({ id: uid(), slot, kind: 'meal', ref: m.id, name: m.name, amount: 1, unit, mealG }); };
+  const fromFood = f => setPick({ id: uid(), slot, kind: 'food', ref: f.id, name: f.name, amount: 100, unit: { kcal: f.kcal, p: f.p, c: f.c, fat: f.fat } });
+  return html`<${Sheet} title=${'Add to ' + name.toLowerCase()} close=${close} tall=${true}>
+    <div class="seg inset" role="group" aria-label="What to add">
+      <button aria-pressed=${String(tab === 'meals')} onClick=${() => setTab('meals')}>Saved meals</button>
+      <button aria-pressed=${String(tab === 'foods')} onClick=${() => setTab('foods')}>Single food</button>
+    </div>
+    ${tab === 'meals'
+      ? html`<div class="list">
+          ${meals.map(m => { const tot = mealTotals(m, foods); return html`<div key=${m.id} class="row"><button class="row-main" onClick=${() => fromMeal(m)}>
+            <span class="col grow"><span class="row-title">${m.name}</span><span class="row-sub wrap">${fullLine(tot)}</span></span>
+          </button></div>`; })}
+          ${meals.length === 0 && html`<p class="hint">No saved meals yet. Build them in Meals, or log a single food.</p>`}
+        </div>`
+      : html`<${FoodFinder} env=${env} withLibrary=${true} onPick=${fromFood}/>`}
+  <//>`;
+}
+
+function PortionPicker({ entry, okLabel, onOk }){
+  const meal = entry.kind === 'meal';
+  const preset = meal && PORTIONS.some(p => p[0] === entry.amount);
+  const [mode, setMode] = useState(meal && !preset ? 'g' : 'x');
+  const [x, setX] = useState(entry.amount);
+  const [g, setG] = useState(() => meal ? (entry.mealG ? g1(entry.amount * entry.mealG) : '') : g1(entry.amount));
+  const grams = num(g);
+  const amount = !meal ? grams : mode === 'x' ? x : (grams && entry.mealG ? grams / entry.mealG : null);
+  const m = amount ? entryMacros(Object.assign({}, entry, { amount })) : null;
+  return html`<div class="stack-sm">
+    ${meal && html`<p class="hint">One portion: ${fullLine(entry.unit)}${entry.mealG ? ' (' + g1(entry.mealG) + ' g)' : ''}</p>`}
+    ${meal && html`<div class="portions">
+      ${PORTIONS.map(([v, l]) => html`<button key=${v} class="chip-toggle" aria-pressed=${String(mode === 'x' && x === v)} onClick=${() => { setMode('x'); setX(v); }}>${l}</button>`)}
+      ${entry.mealG > 0 && html`<button class="chip-toggle" aria-pressed=${String(mode === 'g')} onClick=${() => setMode('g')}>Grams</button>`}
+    </div>`}
+    ${(!meal || mode === 'g') && html`<label class="mfield"><span class="label">${meal ? 'How much of the meal' : 'How much'}</span>
+      <span class="mbox"><input inputmode="decimal" autocomplete="off" value=${g} onInput=${e => setG(e.target.value)} onFocus=${e => e.target.select()}/><span class="unit">g</span></span></label>`}
+    ${!meal && html`<p class="hint">Per 100 g: ${fullLine(entry.unit)}</p>`}
+    <div class="card inset-card"><span class="tot-kcal sm">${m ? kc(m.kcal) : '–'} <small>kcal</small></span><span class="tot-macros">${m ? macroLine(m) : 'Enter an amount'}</span></div>
+    <button class="btn btn-pop" disabled=${!amount} onClick=${() => onOk(Object.assign({}, entry, { amount: Math.round(amount * 1000) / 1000 }))}>${okLabel}</button>
+  </div>`;
+}
+
+/* ---------- Weight ----------
+   weights/<date> = { date, kg }. Trend = straight-line fit through the last 8 weeks of weigh-ins. */
+export function weightTrend(list){
+  const pts = list.slice(-1)[0] ? list.filter(w => parseKey(w.date) >= parseKey(list[list.length - 1].date).getTime() - 56 * 864e5) : [];
+  if (pts.length < 2) return null;
+  const xs = pts.map(w => parseKey(w.date).getTime() / 864e5), ys = pts.map(w => w.kg);
+  if (xs[xs.length - 1] - xs[0] < 6) return null;
+  const mx = xs.reduce((a, b) => a + b) / xs.length, my = ys.reduce((a, b) => a + b) / ys.length;
+  const slope = xs.reduce((a, x, i) => a + (x - mx) * (ys[i] - my), 0) / xs.reduce((a, x) => a + (x - mx) * (x - mx), 0);
+  return { perWeek: slope * 7, weeks: Math.round((xs[xs.length - 1] - xs[0]) / 7) || 1 };
+}
+
+function WeightChart({ list }){
+  const pts = list.slice(-20);
+  if (pts.length < 2) return null;
+  const W = 300, H = 90, P = 8;
+  const t = pts.map(w => parseKey(w.date).getTime()), lo = Math.min(...pts.map(w => w.kg)), hi = Math.max(...pts.map(w => w.kg));
+  const span = Math.max(hi - lo, 1), t0 = t[0], tr = (t[t.length - 1] - t0) || 1;
+  const xy = pts.map((w, i) => [P + (t[i] - t0) / tr * (W - 2 * P), P + (hi + span * 0.1 - w.kg) / (span * 1.2) * (H - 2 * P)]);
+  return html`<svg class="wchart" viewBox=${'0 0 ' + W + ' ' + H} role="img" aria-label=${'Weight from ' + g1(pts[0].kg) + ' to ' + g1(pts[pts.length - 1].kg) + ' kg'}>
+    <polyline points=${xy.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ')} fill="none" stroke="var(--pop)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+    ${xy.map((p, i) => html`<circle key=${i} cx=${p[0].toFixed(1)} cy=${p[1].toFixed(1)} r="3.5" fill="var(--pop)"/>`)}
+  </svg>`;
+}
+
+function hitStats(today, days){
+  let logged = 0, kcal = 0, prot = 0;
+  for (let i = 1; i <= days; i++){
+    const d = shiftDay(today, -i), l = store.get('log/' + d);
+    if (!l || !l.entries.length) continue;
+    const tot = addUp(l.entries.map(entryMacros)), t = targetsFor(d);
+    logged++; if (hitKcal(tot, t)) kcal++; if (hitProtein(tot, t)) prot++;
+  }
+  return { logged, kcal, prot };
+}
+
+const kg1 = n => (Math.round(n * 10) / 10).toFixed(1);
+
+function WeightView({ env }){
+  const { app } = env;
+  const today = app.today;
+  const [adding, setAdding] = useState(false);
+  const [kg, setKg] = useState('');
+  const [date, setDate] = useState(today);
+  const [err, setErr] = useState('');
+  const list = store.list('weights/').sort((a, b) => a.date < b.date ? -1 : 1);
+  const last = list[list.length - 1], prev = list[list.length - 2];
+  const trend = weightTrend(list);
+  const tgt = hasTargets(getTargets());
+  const w7 = hitStats(today, 7), w30 = hitStats(today, 30);
+  const save = () => {
+    const v = num(kg);
+    if (v == null || v < 25 || v > 350){ setErr('Enter your weight in kg, like 82.4.'); return; }
+    if (!date || date > today){ setErr('Pick today or an earlier date.'); return; }
+    store.set('weights/' + date, { date, kg: Math.round(v * 10) / 10 });
+    setAdding(false); setKg(''); setErr(''); app.showToast('Weigh-in saved.');
+  };
+  const diffTxt = (a, b) => { const d = a - b; return (d > 0 ? '+' : d < 0 ? '−' : '±') + kg1(Math.abs(d)) + ' kg'; };
+  const hist = list.slice().reverse();
+  return html`
+    <section class="card">
+      ${last ? html`
+        <div class="row-between"><span class="tot-kcal">${kg1(last.kg)} <small>kg</small></span><span class="cat-sub">${dayLabel(last.date, today)}</span></div>
+        ${prev && html`<p class="hint"><b class="wdiff">${diffTxt(last.kg, prev.kg)}</b> since ${dayLabel(prev.date, today).toLowerCase() === 'yesterday' ? 'yesterday' : fmtShort(prev.date)}</p>`}
+        <${WeightChart} list=${list}/>
+        <p class="hint">${trend ? html`Trend: <b class="wdiff">${(trend.perWeek > 0 ? '+' : trend.perWeek < 0 ? '−' : '±') + kg1(Math.abs(trend.perWeek)) + ' kg per week'}</b> over the last ${plural(trend.weeks, 'week', 'weeks')}.` : 'Weigh in again at least a week later to see your weekly trend.'}</p>`
+      : html`<h2 class="card-title">No weigh-ins yet</h2><p class="hint">Weigh in whenever you like, ideally in the morning before eating. The trend works with gaps.</p>`}
+      ${adding ? html`<div class="stack-sm">
+          <div class="mgrid two">
+            <label class="mfield"><span class="label">Weight</span><span class="mbox"><input inputmode="decimal" autocomplete="off" placeholder=${last ? kg1(last.kg) : '80.0'} value=${kg} onInput=${e => { setKg(e.target.value); setErr(''); }}/><span class="unit">kg</span></span></label>
+            <label class="mfield"><span class="label">Date</span><input class="input inset" type="date" max=${today} value=${date} onInput=${e => { setDate(e.target.value); setErr(''); }}/></label>
+          </div>
+          ${err && html`<p class="status bad">${err}</p>`}
+          <div class="btn-row two"><button class="btn btn-ghost" onClick=${() => { setAdding(false); setErr(''); }}>Cancel</button><button class="btn btn-pop" onClick=${save}>Save</button></div>
+        </div>`
+        : html`<button class="btn btn-pop" onClick=${() => { setAdding(true); setDate(today); }}>+ Weigh in</button>`}
+    </section>
+    <section class="card">
+      <h2 class="card-title">Targets hit</h2>
+      ${!tgt ? html`<p class="hint">Set your targets in Log or Settings to see how often you hit them.</p>`
+        : html`<div class="hits">
+            ${[['Last 7 days', w7], ['Last 30 days', w30]].map(([l, s]) => html`<div key=${l} class="hit">
+              <span class="label">${l}</span>
+              <span class="hit-n"><b>${s.kcal}</b>/${s.logged} <small>calories</small></span>
+              <span class="hit-n"><b>${s.prot}</b>/${s.logged} <small>protein</small></span>
+            </div>`)}
+          </div>
+          <p class="hint">Out of the finished days you logged, so today doesn’t count yet. Calories count when within 10% of the target; protein when you reach at least 90%.</p>`}
+    </section>
+    ${hist.length > 0 && html`<section class="card">
+      <h2 class="card-title">History</h2>
+      <div class="list">${hist.map((w, i) => { const before = hist[i + 1]; return html`<div key=${w.date} class="wrow">
+        <span class="grow">${fmtShort(w.date)}</span>
+        ${before && html`<span class="cat-sub">${diffTxt(w.kg, before.kg)}</span>`}
+        <b>${kg1(w.kg)} kg</b>
+        <button class="icon-btn" aria-label=${'Delete weigh-in of ' + fmtShort(w.date)} onClick=${() => { store.del('weights/' + w.date); app.showToast('Weigh-in deleted.', { label: 'Undo', run: () => store.set('weights/' + w.date, w) }); }}><${Ico} d=${UI.x} size=${16}/></button>
+      </div>`; })}</div>
+    </section>`}`;
 }
