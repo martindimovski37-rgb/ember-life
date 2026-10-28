@@ -3,15 +3,16 @@ import { html, useState, useEffect, useRef, Ico, UI, Ring, dayKey, fmtLong, plur
 import { store, sync, deviceGet, deviceSet } from './store.js';
 import { plannerCtx, PlannerTab, PlanItems, RequiredSheet } from './planner.js';
 import { DietTab, TargetsForm, dayTotals, targetsFor, kc, g1 } from './diet.js';
+import { GymTab, WorkoutBar, workedOutOn } from './gym.js';
 
-export const VERSION = '1.4 · step 3';
+export const VERSION = '1.5 · step 4';
 const TABS = [['today', 'Today', UI.sun], ['planner', 'Planner', UI.grid], ['diet', 'Diet', UI.diet], ['gym', 'Gym', UI.gym]];
 const ALL_TABS = TABS.map(t => t[0]).concat(['settings']);
 
 export function App(){
   const [, setVersion] = useState(0);
   const [tab, setTab] = useState(() => { const h = (location.hash || '').slice(1); return ALL_TABS.includes(h) ? h : 'today'; });
-  const [ui, setUiState] = useState({ sub: 'plan', edit: null, energy: null, focusAct: null, dsub: 'log', dedit: null, ddate: null });
+  const [ui, setUiState] = useState({ sub: 'plan', edit: null, energy: null, focusAct: null, dsub: 'log', dedit: null, ddate: null, gview: null });
   const [toast, setToast] = useState(null);
   const [sheet, setSheet] = useState(null);
   const [today, setToday] = useState(dayKey());
@@ -38,6 +39,7 @@ export function App(){
     setTab(t);
     if (t === 'planner') setUi({ edit: null });
     if (t === 'diet') setUi({ dedit: null });
+    if (t === 'gym') setUi({ gview: store.get('gym/active') ? { type: 'workout' } : null });
     try { history.replaceState(null, '', '#' + t); } catch (e){}
     scrollTop();
   };
@@ -48,7 +50,7 @@ export function App(){
   let body;
   if (tab === 'planner') body = html`<${PlannerTab} ctx=${p}/>`;
   else if (tab === 'diet') body = html`<${DietTab} app=${app} ui=${ui} setUi=${setUi}/>`;
-  else if (tab === 'gym') body = html`<${Soon} title="Gym" step="4" text="Workouts, routines, the rest timer and your records come after the diet section."/>`;
+  else if (tab === 'gym') body = html`<${GymTab} app=${app} ui=${ui} setUi=${setUi}/>`;
   else if (tab === 'settings') body = html`<${SettingsView} app=${app}/>`;
   else body = html`<${TodayView} app=${app}/>`;
 
@@ -61,6 +63,7 @@ export function App(){
       </nav>
       <main class="main">${body}</main>
     </div>
+    ${!(tab === 'gym' && ui.gview && ui.gview.type === 'workout') && html`<${WorkoutBar} onOpen=${() => { setTab('gym'); setUi({ gview: { type: 'workout' } }); try { history.replaceState(null, '', '#gym'); } catch (e){} scrollTop(); }}/>`}
     ${showSetbar && html`<div class="setbar"><button class="btn btn-pop" onClick=${() => p.setPlan(false)}>${'Set today’s plan · ' + p.picks.length}</button></div>`}
     <nav class="tabbar" aria-label="Main">
       <div class="tabbar-inner">
@@ -90,13 +93,6 @@ function ConfirmSheet({ sheet, close }){
   </div>`;
 }
 
-function Soon({ title, step, text }){
-  return html`<div class="stack">
-    <header class="head"><h1>${title}</h1></header>
-    <section class="card"><p class="hint">${text} This part arrives in step ${step}.</p></section>
-  </div>`;
-}
-
 /* ---------- Today ---------- */
 function TodayView({ app }){
   const { p, today, go } = app;
@@ -104,7 +100,7 @@ function TodayView({ app }){
   const planToday = cur.set && cur.date === today;
   const items = planToday ? cur.items || [] : [];
   const nDone = items.filter(i => (cur.done || []).includes(i.id)).length;
-  const tot = dayTotals(today), tg = targetsFor(today);
+  const tot = dayTotals(today), tg = targetsFor(today), gymDone = workedOutOn(today);
   return html`<div class="stack">
     <header class="head">
       <div class="grow col"><span class="eyebrow">${fmtLong(today)}</span><h1>Today</h1></div>
@@ -116,7 +112,7 @@ function TodayView({ app }){
       <div class="rings">
         <button class="ring" onClick=${() => go('diet')}><${Ring} value=${tot.kcal} max=${tg.kcal} color="var(--ring-kcal)"/><span class="ring-val">${kc(tot.kcal)}</span><span class="ring-sub">${tg.kcal ? 'of ' + kc(tg.kcal) + ' kcal' : 'kcal'}</span></button>
         <button class="ring" onClick=${() => go('diet')}><${Ring} value=${tot.p} max=${tg.p} color="var(--ring-protein)"/><span class="ring-val">${g1(tot.p)} g</span><span class="ring-sub">${tg.p ? 'of ' + g1(tg.p) + ' g protein' : 'protein'}</span></button>
-        <button class="ring" onClick=${() => go('gym')}><${Ring} value=${0} max=${1} color="var(--ring-gym)"/><span class="ring-val">–</span><span class="ring-sub">gym</span></button>
+        <button class="ring" onClick=${() => go('gym')}><${Ring} value=${gymDone ? 1 : 0} max=${1} color="var(--ring-gym)"/><span class="ring-val">${gymDone ? 'Done' : '–'}</span><span class="ring-sub">${gymDone ? 'workout' : 'gym'}</span></button>
       </div>
       ${!tg.kcal && html`<p class="hint">Set your calorie and protein targets in Settings to fill the rings.</p>`}
     </section>
