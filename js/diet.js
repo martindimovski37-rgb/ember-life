@@ -4,6 +4,7 @@
    Meals only point at foods, so editing a food changes every meal that uses it. */
 import { html, useState, useEffect, useRef, Ico, UI, uid, clone, plural, scrollTop, dayKey, parseKey, fmtShort } from './lib.js';
 import { store, deviceGet } from './store.js';
+import { claude, aiModel, fallbackParams, aiError } from './claude.js';
 
 /* ---------- Math ---------- */
 export const ZERO = { kcal: 0, p: 0, c: 0, fat: 0 };
@@ -30,11 +31,15 @@ const guessState = s => /\b(cooked|boiled|roasted|baked|grilled|fried|steamed|br
   : /\b(raw|dry|uncooked)\b/i.test(s) ? 'raw' : '';
 
 /* ---------- Lookups ---------- */
-async function usdaSearch(q){
+export async function usdaSearch(q){
   const key = deviceGet().usdaKey || 'DEMO_KEY';
   const run = async all => {
-    const res = await fetch('https://api.nal.usda.gov/fdc/v1/foods/search?query=' + encodeURIComponent(q) + '&dataType=Foundation,SR%20Legacy&pageSize=20' + (all ? '&requireAllWords=true' : ''),
-      { headers: { 'X-Api-Key': key } });
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 12000);
+    let res;
+    try { res = await fetch('https://api.nal.usda.gov/fdc/v1/foods/search?query=' + encodeURIComponent(q) + '&dataType=Foundation,SR%20Legacy&pageSize=20' + (all ? '&requireAllWords=true' : ''),
+      { headers: { 'X-Api-Key': key }, signal: ctl.signal }); }
+    catch (e){ throw new Error(e.name === 'AbortError' ? 'USDA isn’t answering right now. Try again later, or type the values yourself.' : 'Couldn’t reach USDA. Check your connection.'); }
+    finally { clearTimeout(timer); }
     if (res.status === 429) throw new Error(deviceGet().usdaKey ? 'USDA says too many lookups. Try again in a few minutes.' : 'The shared USDA key is used up for now. Add your own free key in Settings → API keys.');
     if (res.status === 403) throw new Error('USDA didn’t accept the key. Check it in Settings → API keys.');
     if (!res.ok) throw new Error('USDA didn’t answer (' + res.status + '). Try again.');
@@ -71,20 +76,17 @@ async function barcodeLookup(code){
 }
 
 async function aiEstimate(q){
-  const key = deviceGet().claudeKey;
-  if (!key) throw new Error('Add your Claude key in Settings → API keys to get estimates.');
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true', 'content-type': 'application/json' },
-    body: JSON.stringify({ model: 'claude-haiku-5-5', max_tokens: 300, messages: [{ role: 'user', content:
+  const { Anthropic, client } = await claude();
+  const model = aiModel();
+  let msg;
+  try {
+    msg = await client.beta.messages.create(Object.assign({ model, max_tokens: 4000, output_config: { effort: 'low' }, messages: [{ role: 'user', content:
       'Estimate typical nutrition values per 100 g for this food: "' + q + '". Use standard reference values (USDA-style). ' +
       'If it could be raw or cooked and the text does not say, assume how it is usually weighed. ' +
-      'Reply with only JSON: {"name": short food name, "state": "raw"|"cooked"|"", "kcal": number, "protein": number, "carbs": number, "fat": number}' }] })
-  });
-  if (res.status === 401) throw new Error('Claude didn’t accept the key. Check it in Settings.');
-  if (!res.ok) throw new Error('Claude didn’t answer (' + res.status + '). Try again.');
-  const j = await res.json();
-  const text = ((j.content || []).find(b => b.type === 'text') || {}).text || '';
+      'Reply with only JSON: {"name": short food name, "state": "raw"|"cooked"|"", "kcal": number, "protein": number, "carbs": number, "fat": number}' }] }, fallbackParams(model)));
+  } catch (e){ throw new Error(aiError(Anthropic, e)); }
+  if (msg.stop_reason === 'refusal') throw new Error('Claude couldn’t estimate that one. Type the values yourself.');
+  const text = msg.content.filter(b => b.type === 'text').map(b => b.text).join('');
   const m = text.match(/\{[\s\S]*\}/);
   if (!m) throw new Error('The estimate came back unreadable. Try again.');
   const e = JSON.parse(m[0]);

@@ -4,8 +4,10 @@ import { store, sync, deviceGet, deviceSet } from './store.js';
 import { plannerCtx, PlannerTab, PlanItems, RequiredSheet } from './planner.js';
 import { DietTab, TargetsForm, dayTotals, targetsFor, kc, g1 } from './diet.js';
 import { GymTab, WorkoutBar, workedOutOn, SOUNDS, playSound } from './gym.js';
+import { AssistantButton, AssistantChat } from './assistant.js';
+import { AI_MODELS, aiModel } from './claude.js';
 
-export const VERSION = '1.8 · step 4';
+export const VERSION = '1.9 · step 5';
 const TABS = [['today', 'Today', UI.sun], ['planner', 'Planner', UI.grid], ['diet', 'Diet', UI.diet], ['gym', 'Gym', UI.gym]];
 const ALL_TABS = TABS.map(t => t[0]).concat(['settings']);
 
@@ -15,6 +17,7 @@ export function App(){
   const [ui, setUiState] = useState({ sub: 'plan', edit: null, energy: null, focusAct: null, dsub: 'log', dedit: null, ddate: null, gview: null });
   const [toast, setToast] = useState(null);
   const [sheet, setSheet] = useState(null);
+  const [aiOpen, setAiOpen] = useState(false);
   const [today, setToday] = useState(dayKey());
   const toastTimer = useRef(null);
 
@@ -64,6 +67,8 @@ export function App(){
       <main class="main">${body}</main>
     </div>
     ${!(tab === 'gym' && ui.gview && ui.gview.type === 'workout') && html`<${WorkoutBar} onOpen=${() => { setTab('gym'); setUi({ gview: { type: 'workout' } }); try { history.replaceState(null, '', '#gym'); } catch (e){} scrollTop(); }}/>`}
+    ${!aiOpen && !showSetbar && html`<${AssistantButton} raised=${!!store.get('gym/active')} onOpen=${() => setAiOpen(true)}/>`}
+    ${aiOpen && html`<${AssistantChat} app=${app} close=${() => setAiOpen(false)}/>`}
     ${showSetbar && html`<div class="setbar"><button class="btn btn-pop" onClick=${() => p.setPlan(false)}>${'Set today’s plan · ' + p.picks.length}</button></div>`}
     <nav class="tabbar" aria-label="Main">
       <div class="tabbar-inner">
@@ -167,6 +172,13 @@ function SettingsView({ app }){
     <${SyncCard} showToast=${showToast}/>
     <${BackupCard} app=${app}/>
     <${KeysCard} showToast=${showToast}/>
+    <section class="card">
+      <h2 class="card-title">Assistant model</h2>
+      <div class="list">${AI_MODELS.map(([id, name, sub]) => { const on = aiModel() === id; return html`<button key=${id} class="act-pick" aria-pressed=${String(on)}
+        onClick=${() => store.set('settings/app', Object.assign({}, settings, { aiModel: id }))}>
+        <span class="col grow"><span class="row-title">${name}</span><span class="row-sub wrap">${sub}</span></span><span class=${'radio' + (on ? ' on' : '')}></span></button>`; })}</div>
+      <p class="hint">Used by the ✦ assistant and food estimates. Costs come out of your Anthropic credit; photos cost a little more than text.</p>
+    </section>
     <section class="card">
       <h2 class="card-title">Put it on your iPhone home screen</h2>
       <ol class="steps">

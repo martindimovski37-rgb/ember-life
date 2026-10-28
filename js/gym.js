@@ -12,7 +12,7 @@ import { BodyMap, MUSCLE_NAMES } from './bodymap.js';
 /* ---------- Exercise library ---------- */
 let LIB = null, libLoad = null;
 const libSubs = new Set();
-function loadLib(){
+export function loadLib(){
   if (!libLoad) libLoad = fetch('data/exercises.json').then(r => r.json()).then(list => { LIB = list; libSubs.forEach(f => f()); })
     .catch(() => { libLoad = null; });
   return libLoad;
@@ -28,7 +28,7 @@ export function exById(id){
   if (c) return c;
   return (LIB || []).find(e => e.id === id) || { id, n: 'Exercise', p: [], s: [], e: 'other', in: [], im: 0 };
 }
-const allExercises = () => customs().concat(LIB || []);
+export const allExercises = () => customs().concat(LIB || []);
 const IMG = (id, i = 0) => 'https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/' + encodeURIComponent(id) + '/' + i + '.jpg';
 const exThumb = ex => ex.custom ? ex.photo : ex.im ? IMG(ex.id) : null;
 const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
@@ -360,7 +360,7 @@ function finishWorkout(cur){
 
 /* ---------- Exercise picker ---------- */
 /* Search ranking: a common gym name (alias) first, then names that start with or contain the words */
-const rank = (x, ql) => { const n = x.n.toLowerCase(), al = (x.a || '').split(',').map(t => t.trim());
+export const rank = (x, ql) => { const n = x.n.toLowerCase(), al = (x.a || '').split(',').map(t => t.trim());
   return (al.includes(ql) ? 8 : al.some(t => t.startsWith(ql)) ? 5 : 0) + (n.startsWith(ql) ? 3 : n.includes(ql) ? 2 : 0) + (x.custom ? 1 : 0); };
 function PickerSheet({ env, close, onPick }){
   const [q, setQ] = useState('');
