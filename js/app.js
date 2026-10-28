@@ -5,9 +5,9 @@ import { plannerCtx, PlannerTab, PlanItems, RequiredSheet } from './planner.js';
 import { DietTab, TargetsForm, dayTotals, targetsFor, kc, g1 } from './diet.js';
 import { GymTab, WorkoutBar, workedOutOn, SOUNDS, playSound } from './gym.js';
 import { AssistantButton, AssistantChat } from './assistant.js';
-import { AI_MODELS, aiModel } from './claude.js';
+import { AI_MODELS, aiModel, claude, aiError } from './claude.js';
 
-export const VERSION = '1.9 · step 5';
+export const VERSION = '1.10';
 const TABS = [['today', 'Today', UI.sun], ['planner', 'Planner', UI.grid], ['diet', 'Diet', UI.diet], ['gym', 'Gym', UI.gym]];
 const ALL_TABS = TABS.map(t => t[0]).concat(['settings']);
 
@@ -291,11 +291,22 @@ function BackupCard({ app }){
   </section>`;
 }
 
+/* Keys are cleaned of spaces, line breaks and invisible characters that copy-paste on iPhone can add */
+const cleanKey = k => String(k || '').replace(/[\s\u200B-\u200D\uFEFF]+/g, '');
+const keyPreview = k => k.length > 18 ? k.slice(0, 14) + '…' + k.slice(-4) + ' (' + k.length + ' characters)' : k;
 function KeysCard({ showToast }){
   const dev = deviceGet();
   const [usda, setUsda] = useState(dev.usdaKey || '');
-  const [claude, setClaude] = useState(dev.claudeKey || '');
-  const save = () => { deviceSet({ usdaKey: usda.trim(), claudeKey: claude.trim() }); showToast('Keys saved on this device.'); };
+  const [claudeKey, setClaudeKey] = useState(dev.claudeKey || '');
+  const [test, setTest] = useState(null);
+  const saved = cleanKey(deviceGet().claudeKey);
+  const save = () => { const u = cleanKey(usda), c = cleanKey(claudeKey); deviceSet({ usdaKey: u, claudeKey: c }); setUsda(u); setClaudeKey(c); setTest(null); showToast('Keys saved on this device.'); };
+  const runTest = async () => {
+    setTest({ state: 'busy' });
+    let Anthropic = null;
+    try { const c = await claude(); Anthropic = c.Anthropic; await c.client.messages.create({ model: 'claude-haiku-5-5', max_tokens: 1, messages: [{ role: 'user', content: 'Hi' }] }); setTest({ state: 'ok', text: 'The key works.' }); }
+    catch (e){ setTest({ state: 'bad', text: aiError(Anthropic, e) }); }
+  };
   return html`<section class="card">
     <h2 class="card-title">API keys</h2>
     <p class="hint">Food lookups use the free USDA key; the AI assistant uses your Claude key. Keys stay on this device and never sync.</p>
@@ -305,8 +316,14 @@ function KeysCard({ showToast }){
     </div>
     <div class="field">
       <label class="label" for="key-claude">Claude API</label>
-      <input id="key-claude" class="input inset" type="password" placeholder="sk-ant-…" autocomplete="off" autocapitalize="off" spellcheck="false" value=${claude} onInput=${e => setClaude(e.target.value)}/>
+      <input id="key-claude" class="input inset" type="password" placeholder="sk-ant-api03-…" autocomplete="off" autocapitalize="off" spellcheck="false" value=${claudeKey} onInput=${e => setClaudeKey(e.target.value)}/>
+      ${saved && html`<p class="hint">Saved key: <b class="mono">${keyPreview(saved)}</b></p>`}
+      ${saved && !saved.startsWith('sk-ant-api') && html`<p class="warn"><${Ico} d=${UI.alert} size=${16}/>This doesn’t look like an API key. Keys from console.anthropic.com → Settings → API keys start with sk-ant-api03-.</p>`}
     </div>
-    <button class="btn btn-ghost sm" onClick=${save}>Save keys</button>
+    <div class="btn-row">
+      <button class="btn btn-ghost sm" onClick=${save}>Save keys</button>
+      ${saved && html`<button class="btn btn-ghost sm" disabled=${test && test.state === 'busy'} onClick=${runTest}>${test && test.state === 'busy' ? 'Testing…' : 'Test Claude key'}</button>`}
+    </div>
+    ${test && test.text && html`<p class=${'status' + (test.state === 'bad' ? ' bad' : '')}><${Ico} d=${test.state === 'bad' ? UI.x : UI.check} size=${16} sw=${3}/>${test.text}</p>`}
   </section>`;
 }

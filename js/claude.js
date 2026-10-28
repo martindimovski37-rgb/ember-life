@@ -11,7 +11,7 @@ export const aiModel = () => (store.get('settings/app') || {}).aiModel || 'claud
 
 let SDK = null;
 export async function claude(){
-  const key = deviceGet().claudeKey;
+  const key = String(deviceGet().claudeKey || '').replace(/[\s\u200B-\u200D\uFEFF]+/g, '');
   if (!key) throw new Error('Add your Claude key in Settings → API keys first.');
   if (!SDK) SDK = (await import('../vendor/anthropic-sdk.mjs')).default;
   return { Anthropic: SDK, client: new SDK({ apiKey: key, dangerouslyAllowBrowser: true }) };
@@ -22,7 +22,7 @@ export async function claude(){
 export const fallbackParams = model => model === 'claude-haiku-5-5' ? {} : { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' };
 
 export function aiError(Anthropic, e){
-  if (Anthropic && e instanceof Anthropic.AuthenticationError) return 'Claude didn’t accept your key. Check it in Settings → API keys.';
+  if (Anthropic && e instanceof Anthropic.AuthenticationError) return 'Anthropic rejected this key. Make sure it starts with sk-ant-api03-, is still listed in console.anthropic.com → Settings → API keys, and was copied in full. Then use Test Claude key in Settings.';
   if (Anthropic && e instanceof Anthropic.PermissionDeniedError) return 'This key isn’t allowed to use that model. Check your Anthropic Console.';
   if (Anthropic && e instanceof Anthropic.RateLimitError) return 'Too many requests right now. Wait a minute and try again.';
   if (Anthropic && e instanceof Anthropic.BadRequestError) return /credit/i.test(e.message || '') ? 'Your Anthropic credit has run out. Top it up in the Anthropic Console.' : 'Claude couldn’t handle that request. Try rephrasing it.';
