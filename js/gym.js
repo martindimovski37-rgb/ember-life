@@ -270,16 +270,13 @@ const RESTS = [0, 30, 45, 60, 75, 90, 120, 150, 180, 240, 300];
 const TYPES = [['w', 'Warm-up', 'W'], ['n', 'Normal', ''], ['f', 'Failure', 'F'], ['d', 'Drop set', 'D']];
 const RPES = ['', '6', '6.5', '7', '7.5', '8', '8.5', '9', '9.5', '10'];
 
-/* Rest timer sounds, made on the fly so nothing needs downloading. They play through headphones when connected,
-   otherwise the iPhone speaker. 'transient' tells iOS it's a short alert that briefly lowers music, not silenced by the mute switch. */
+/* Rest timer sounds. Each sound is drawn once into a short WAV file in memory, then played through one audio
+   player that gets unlocked when you tick a set (iPhone only allows sound that a tap has started).
+   A plain audio player keeps working 90 seconds later, unlike the Web Audio engine, which iPhone pauses when idle.
+   Two modes (Settings): 'mix' plays over your music and lowers it briefly, but iPhone's silent switch mutes it;
+   'always' plays even on silent, and pauses other music while it plays. */
 export const SOUNDS = [['chime', 'Chime'], ['beep', 'Beep'], ['bell', 'Bell'], ['whistle', 'Whistle'], ['ding', 'Triple ding'], ['boxing', 'Boxing bell'], ['off', 'Off']];
-function audio(){
-  const A = window.AudioContext || window.webkitAudioContext; if (!A) return null;
-  try { if (navigator.audioSession) navigator.audioSession.type = 'transient'; } catch (e){}
-  const ctx = audio.ctx || (audio.ctx = new A());
-  if (ctx.state === 'suspended') ctx.resume();
-  return ctx;
-}
+const SR = 44100;
 function tone(ctx, at, freq, len, { type = 'sine', vol = 0.3, to } = {}){
   const o = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime + at;
   o.type = type; o.frequency.setValueAtTime(freq, t);
@@ -287,25 +284,56 @@ function tone(ctx, at, freq, len, { type = 'sine', vol = 0.3, to } = {}){
   g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
   o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t + len + 0.05);
 }
+function synth(ctx, kind){
+  if (kind === 'beep') [0, 0.3, 0.6].forEach(t => tone(ctx, t, 880, 0.18, { type: 'square', vol: 0.18 }));
+  else if (kind === 'bell') [0, 0.9].forEach(t => { tone(ctx, t, 660, 1.4, { vol: 0.5 }); tone(ctx, t, 1650, 0.9, { vol: 0.16 }); tone(ctx, t, 2640, 0.5, { vol: 0.08 }); });
+  else if (kind === 'whistle') [0, 0.55].forEach(t => tone(ctx, t, 1400, 0.4, { vol: 0.4, to: 2600 }));
+  else if (kind === 'ding') [0, 0.32, 0.64].forEach(t => tone(ctx, t, 1568, 0.3, { type: 'triangle', vol: 0.5 }));
+  else if (kind === 'boxing') [0, 0.22, 0.44, 0.66].forEach(t => { tone(ctx, t, 520, 0.5, { vol: 0.45 }); tone(ctx, t, 1310, 0.35, { vol: 0.15 }); });
+  else [[0, 1047], [0.16, 1319], [0.32, 1568], [0.6, 2093]].forEach(([t, f]) => tone(ctx, t, f, 0.7, { vol: 0.4 }));
+}
+function toWav(data){
+  const n = data.length, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+  const w = (o, str) => { for (let i = 0; i < str.length; i++) v.setUint8(o + i, str.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, SR, true); v.setUint32(28, SR * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++){ const x = Math.max(-1, Math.min(1, data[i])); v.setInt16(44 + i * 2, x < 0 ? x * 0x8000 : x * 0x7fff, true); }
+  return new Blob([buf], { type: 'audio/wav' });
+}
+const soundUrls = {};
+async function renderSound(kind){
+  if (soundUrls[kind]) return soundUrls[kind];
+  const O = window.OfflineAudioContext || window.webkitOfflineAudioContext; if (!O) return null;
+  const ctx = new O(1, SR * 2, SR); synth(ctx, kind);
+  const out = await ctx.startRendering();
+  return (soundUrls[kind] = URL.createObjectURL(toWav(out.getChannelData(0))));
+}
+/* draw every sound up front, so playing never has to wait (iPhone needs play() to happen right away) */
+setTimeout(() => SOUNDS.forEach(([k]) => k !== 'off' && renderSound(k).catch(() => {})), 1500);
+const SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+let player = null, unlocked = false;
+const soundMode = () => (store.get('settings/app') || {}).restSoundMode || 'always';
+function session(){ try { if (navigator.audioSession) navigator.audioSession.type = soundMode() === 'mix' ? 'transient' : 'playback'; } catch (e){} }
+function getPlayer(){ if (!player){ player = new Audio(); player.setAttribute('playsinline', ''); player.preload = 'auto'; } return player; }
 export function playSound(kind){
   if (kind === 'off') return;
-  const ctx = audio(); if (!ctx) return;
-  try {
-    if (kind === 'beep') [0, 0.3, 0.6].forEach(t => tone(ctx, t, 880, 0.18, { type: 'square', vol: 0.12 }));
-    else if (kind === 'bell') [0, 0.9].forEach(t => { tone(ctx, t, 660, 1.4, { vol: 0.35 }); tone(ctx, t, 1650, 0.9, { vol: 0.12 }); tone(ctx, t, 2640, 0.5, { vol: 0.06 }); });
-    else if (kind === 'whistle') [0, 0.55].forEach(t => tone(ctx, t, 1400, 0.4, { vol: 0.25, to: 2600 }));
-    else if (kind === 'ding') [0, 0.32, 0.64].forEach(t => tone(ctx, t, 1568, 0.3, { type: 'triangle', vol: 0.35 }));
-    else if (kind === 'boxing') [0, 0.22, 0.44, 0.66].forEach(t => { tone(ctx, t, 520, 0.5, { vol: 0.3 }); tone(ctx, t, 1310, 0.35, { vol: 0.1 }); });
-    else [[0, 1047], [0.16, 1319], [0.32, 1568], [0.6, 2093]].forEach(([t, f]) => tone(ctx, t, f, 0.7, { vol: 0.28 }));
-  } catch (e){}
+  session();
+  const pl = getPlayer(), url = soundUrls[kind];
+  const go = u => { pl.src = u; try { pl.currentTime = 0; } catch (e){} const pr = pl.play(); if (pr) pr.then(() => { unlocked = true; }).catch(() => {}); };
+  if (url) go(url); else renderSound(kind).then(u => u && go(u)).catch(() => {});
 }
 const restSound = () => (store.get('settings/app') || {}).restSound || 'chime';
 function beep(){
   try { navigator.vibrate && navigator.vibrate([200, 100, 200]); } catch (e){}
   playSound(restSound());
 }
-/* iPhone only plays sound after a tap, so wake the audio on the first set tick */
-const unlockAudio = () => { audio(); };
+/* called on every set tick: unlocks the player with a silent sound while we still have the tap */
+const unlockAudio = () => {
+  if (unlocked) return;
+  session();
+  const pl = getPlayer(); pl.src = SILENT;
+  const pr = pl.play(); if (pr) pr.then(() => { unlocked = true; }).catch(() => {});
+};
 
 function useTick(ms = 1000){
   const [, set] = useState(0);

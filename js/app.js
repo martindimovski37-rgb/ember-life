@@ -7,7 +7,7 @@ import { GymTab, WorkoutBar, workedOutOn, SOUNDS, playSound } from './gym.js';
 import { AssistantButton, AssistantChat } from './assistant.js';
 import { AI_MODELS, aiModel, claude, aiError } from './claude.js';
 
-export const VERSION = '1.16';
+export const VERSION = '1.17';
 const TABS = [['today', 'Today', UI.sun], ['planner', 'Planner', UI.grid], ['diet', 'Diet', UI.diet], ['gym', 'Gym', UI.gym]];
 const ALL_TABS = TABS.map(t => t[0]).concat(['settings']);
 
@@ -163,7 +163,11 @@ function SettingsView({ app }){
       <div class="list">${SOUNDS.map(([k, name]) => { const on = (settings.restSound || 'chime') === k; return html`<button key=${k} class="act-pick" aria-pressed=${String(on)}
         onClick=${() => { store.set('settings/app', Object.assign({}, settings, { restSound: k })); playSound(k); }}>
         <span class="grow row-title">${name}</span><span class=${'radio' + (on ? ' on' : '')}></span></button>`; })}</div>
-      <p class="hint">Tap one to hear it. It plays through your headphones when they’re connected, otherwise the iPhone speaker, while Ember Life is open.</p>
+      <span class="label">When it plays</span>
+      <div class="list">${[['always', 'Always, even on silent', 'Your music pauses for a moment while it plays'], ['mix', 'Over my music', 'Music just gets quieter, but the silent switch mutes it']].map(([k, name, sub]) => { const on = (settings.restSoundMode || 'always') === k; return html`<button key=${k} class="act-pick" aria-pressed=${String(on)}
+        onClick=${() => { store.set('settings/app', Object.assign({}, settings, { restSoundMode: k })); playSound(settings.restSound || 'chime'); }}>
+        <span class="col grow"><span class="row-title">${name}</span><span class="row-sub wrap">${sub}</span></span><span class=${'radio' + (on ? ' on' : '')}></span></button>`; })}</div>
+      <p class="hint">Tap a sound to hear it. It plays through your headphones when they’re connected, otherwise the iPhone speaker, while Ember Life is open.</p>
     </section>
     <section class="card">
       <h2 class="card-title">Daily targets</h2>
