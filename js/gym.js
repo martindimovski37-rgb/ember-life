@@ -129,10 +129,6 @@ function GymHome({ env, active }){
     if (all.some(w => w.date >= a && w.date <= b)) streak++; else break;
   }
   const sets = muscleSets(ws, today);
-  const ranked = Object.keys(sets).filter(m => sets[m] > 0).sort((a, b) => sets[b] - sets[a]);
-  const max = ranked.length ? sets[ranked[0]] : 1;
-  const big = ['chest', 'shoulders', 'lats', 'quadriceps', 'hamstrings', 'glutes', 'biceps', 'triceps'];
-  const missing = big.filter(m => !sets[m]).map(m => MUSCLE_NAMES[m]);
   const routines = store.list('routines/').map(normRoutine).sort((a, b) => a.name.localeCompare(b.name));
   const start = r => {
     if (store.get('gym/active')){ env.app.showToast('Finish or discard the workout in progress first.'); env.go({ type: 'workout' }); return; }
@@ -142,20 +138,14 @@ function GymHome({ env, active }){
     ${active
       ? html`<button class="bigbtn live" onClick=${() => env.go({ type: 'workout' })}><span class="wdot"></span><span class="grow">Resume ${active.name}</span><${Ico} d=${UI.fwd} size=${20}/></button>`
       : html`<button class="bigbtn" onClick=${() => start(null)}><${Ico} d=${UI.plus} size=${24}/><span class="grow">Start empty workout</span></button>`}
-    <section class="card">
-      <div class="body-row">
-        <${BodyMap} sets=${sets} height=${178}/>
-        <div class="mlist">
-          <span class="label">Sets this week</span>
-          ${ranked.slice(0, 6).map(m => html`<div key=${m} class="mline"><div class="row-between"><span>${MUSCLE_NAMES[m] || cap(m)}</span><b>${r1(sets[m])}</b></div><div class="bar-track"><span class=${'bar-fill bm' + (sets[m] >= 12 ? 3 : sets[m] >= 6 ? 2 : 1)} style=${'width:' + Math.round(sets[m] / max * 100) + '%'}></span></div></div>`)}
-          ${!ranked.length && html`<p class="hint">Muscles light up as you train this week.</p>`}
-        </div>
-      </div>
-      ${ranked.length > 0 && missing.length > 0 && html`<p class="hint">Not trained yet this week: ${missing.join(', ')}.</p>`}
+    <section class="card bm-card">
+      <h2 class="label center">Sets this week</h2>
+      <${BodyMap} sets=${sets} height=${260}/>
+      <div class="bm-key" aria-label="Colour key"><span><i class="bm0"></i>0</span><span><i class="bm1"></i>1–5</span><span><i class="bm2"></i>6–11</span><span><i class="bm3"></i>12+ sets</span></div>
     </section>
-    <section class="card">
-      <div class="row-between"><h2 class="card-title">${plural(week.length, 'workout', 'workouts')} this week</h2>${streak > 1 && html`<span class="streak">${streak}-week streak</span>`}</div>
-      <div class="weekdots">${days.map(d => { const n = all.filter(w => w.date === d).length; return html`<span key=${d} class=${d === today ? 'today' : ''}><i class=${n ? 'on' : ''}></i>${parseKey(d).toLocaleDateString(undefined, { weekday: 'narrow' })}</span>`; })}</div>
+    <section class="card week-card">
+      <div class="row-between"><h2 class="label">${plural(week.length, 'workout', 'workouts')} this week</h2>${streak > 1 && html`<span class="label streak">${streak}-week streak</span>`}</div>
+      <div class="weekdots sm">${days.map(d => { const n = all.filter(w => w.date === d).length; return html`<span key=${d} class=${d === today ? 'today' : ''}><i class=${n ? 'on' : ''}></i>${parseKey(d).toLocaleDateString(undefined, { weekday: 'narrow' })}</span>`; })}</div>
     </section>
     <${RoutinesSection} env=${env} routines=${routines} start=${start}/>`;
 }
@@ -223,7 +213,7 @@ function RoutinesSection({ env, routines, start }){
   return html`<section class="stack-sm">
     <div class="row-between"><h2 class="section-t">Routines</h2>
       <span class="row-actions">
-        <button class="icon-btn sq" aria-label="New routine" onClick=${() => env.go({ type: 'routine', id: null })}><${Ico} d=${UI.clipboard} size=${22}/></button>
+        <button class="btn btn-ghost sm card-bg" onClick=${() => env.go({ type: 'routine', id: null })}><${Ico} d=${UI.plus} size=${18} sw=${2.6}/>New routine</button>
         <button class="icon-btn sq" aria-label="New folder" onClick=${newFolder}><${Ico} d=${UI.folderPlus} size=${22}/></button>
       </span></div>
     ${groups.map(g => html`<div key=${g.id} class="folder">
