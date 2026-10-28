@@ -505,12 +505,14 @@ body.noscroll{overflow:hidden}
 /* Exercise header with drag handle, routine set table, reorder list */
 .exhead{display:flex; align-items:center; gap:2px}
 .exhead .exname{min-width:0; overflow-wrap:anywhere}
-.grip{width:36px; height:40px; flex:none; margin-left:-8px; border:0; background:transparent; color:var(--muted); display:flex; align-items:center; justify-content:center; border-radius:8px}
+.grip{width:44px; height:44px; flex:none; margin-left:-10px; touch-action:none; cursor:grab; border:0; background:transparent; color:var(--muted); display:flex; align-items:center; justify-content:center; border-radius:8px}
 .grip svg,.rhandle svg{stroke-width:3.4}
 .settable.routine .srow{grid-template-columns:2.4rem minmax(0, 1fr) 4.6rem 4.2rem}
 .rlist{position:relative}
-.rrow{position:absolute; left:0; right:0; top:0; height:52px; display:flex; align-items:center; gap:8px; padding:0 4px 0 14px; border-radius:12px; background:var(--inset); transition:transform .15s ease}
+.rrow{position:absolute; left:0; right:0; top:0; height:52px; touch-action:none; cursor:grab; user-select:none; -webkit-user-select:none; display:flex; align-items:center; gap:8px; padding:0 4px 0 14px; border-radius:12px; background:var(--inset); transition:transform .15s ease}
 .rrow.lifted{transition:none; z-index:2; background:var(--card); box-shadow:var(--shadow), inset 0 0 0 2px var(--accent)}
 .rhandle{width:48px; height:48px; flex:none; display:flex; align-items:center; justify-content:center; color:var(--muted); touch-action:none; cursor:grab; border-radius:10px}
 .rrow.lifted .rhandle{color:var(--accent); cursor:grabbing}
 @media (prefers-reduced-motion: reduce){ .rrow{transition:none} }
+.blocks{display:flex; flex-direction:column; gap:14px}
+[hidden]{display:none !important}

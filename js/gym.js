@@ -269,9 +269,8 @@ function WorkoutView({ env, w }){
       <button class="btn btn-pop sm" onClick=${() => app.setSheet({ kind: 'confirm', title: 'Finish workout?', ok: 'Finish', run: finish,
         text: open ? plural(open, 'set isn’t', 'sets aren’t') + ' ticked off and won’t be saved.' : 'Saves it to your history and checks for new records.' })}>Finish</button>
     </div>
-    ${sheet && sheet.kind === 'reorder'
-      ? html`<${ReorderList} names=${w.exercises.map(e => exById(e.ex).n)} onDone=${order => { upd(c => { c.exercises = order.map(i => c.exercises[i]); }); setSheet(null); }}/>`
-      : w.exercises.map((e, i) => html`<${ExerciseBlock} key=${e.id} env=${env} start=${w.start} e=${e} idx=${i} updEx=${updEx} tick=${tick} setSheet=${setSheet}/>`)}
+    ${sheet && sheet.kind === 'reorder' && html`<${ReorderList} names=${w.exercises.map(e => exById(e.ex).n)} start=${sheet.start} onDone=${order => { upd(c => { c.exercises = order.map(i => c.exercises[i]); }); setSheet(null); }}/>`}
+    <div class="blocks" hidden=${!!(sheet && sheet.kind === 'reorder')}>${w.exercises.map((e, i) => html`<${ExerciseBlock} key=${e.id} env=${env} start=${w.start} e=${e} idx=${i} updEx=${updEx} tick=${tick} setSheet=${setSheet}/>`)}</div>
     ${w.exercises.length === 0 && html`<section class="card"><p class="hint">Add your first exercise. Your numbers from last time show up next to each set.</p></section>`}
     <button class="btn btn-solid" onClick=${() => setSheet({ kind: 'pick' })}>+ Add exercises</button>
     <button class="btn btn-danger" onClick=${() => app.setSheet({ kind: 'confirm', title: 'Discard workout?', ok: 'Discard', danger: true, text: 'Everything logged in this workout is thrown away.', run: () => { store.del('gym/active'); env.home(); } })}>Discard workout</button>
@@ -302,7 +301,7 @@ function ExerciseBlock({ env, start, e, idx, updEx, tick, setSheet, routine }){
   const saveNote = () => { if ((noteDoc.note || '') !== note) store.set('exnotes/' + e.ex, Object.assign({}, noteDoc, { note })); };
   return html`<section class="card exblock">
     <div class="exhead">
-      <button class="grip" aria-label="Reorder exercises" onClick=${() => setSheet({ kind: 'reorder' })}><${Ico} d=${UI.grip} size=${20}/></button>
+      <button class="grip" aria-label="Drag to reorder" onPointerDown=${ev => { ev.preventDefault(); setSheet({ kind: 'reorder', start: { pos: idx, y: ev.clientY } }); }}><${Ico} d=${UI.grip} size=${22}/></button>
       ${routine ? html`<span class="exname static grow">${ex.n}</span>` : html`<button class="exname grow" onClick=${() => env.go({ type: 'ex', id: e.ex, back: { type: 'workout' } })}>${ex.n}</button>`}
       <button class="icon-btn" aria-label=${'Options for ' + ex.n} onClick=${() => setSheet({ kind: 'exmenu', e, idx })}><${Ico} d=${UI.dots} size=${20}/></button>
     </div>
@@ -314,7 +313,7 @@ function ExerciseBlock({ env, start, e, idx, updEx, tick, setSheet, routine }){
     <div class=${'settable' + (routine ? ' routine' : '')} role="table">
       <div class="srow shead" role="row"><span>Set</span><span>Previous</span><span>kg</span><span>Reps</span>${!routine && html`<span>RPE</span><span aria-label="Done"><${Ico} d=${UI.check} size=${14} sw=${3}/></span>`}</div>
       ${e.sets.map((s, i) => {
-        const label = s.t === 'w' ? 'W' : String(++n) + (s.t === 'f' ? 'F' : s.t === 'd' ? 'D' : '');
+        const label = s.t === 'w' ? 'W' : s.t === 'f' ? 'F' : s.t === 'd' ? 'D' : String(++n);
         const p = prev[i];
         const set = (k, v) => updEx(e.id, x => { x.sets.find(y => y.id === s.id)[k] = v; });
         const phK = s.tk || (p ? r1(p.kg || 0) : '0'), phR = s.tr || (p ? String(p.reps) : '0');
@@ -348,26 +347,51 @@ function BlockSheets({ env, sheet, setSheet, updEx, remove, back }){
   return null;
 }
 
-/* Drag the handles to reorder. onDone gets the new order as indexes into the original list. */
+/* Drag to reorder. Started from a card's handle (start = { pos, y }) the list appears with that exercise under the finger
+   and the new order is saved on release; opened from the menu, any row can be dragged and Done closes it.
+   onDone gets the new order as indexes into the original list. */
 const ROW = 60;
-function ReorderList({ names, onDone }){
+function ReorderList({ names, onDone, start }){
   const [order, setOrder] = useState(() => names.map((_, i) => i));
   const [drag, setDrag] = useState(null);
+  const listRef = useRef(null), dragRef = useRef(null), orderRef = useRef(order);
   const n = order.length;
-  const target = drag ? Math.max(0, Math.min(n - 1, drag.pos + Math.round(drag.dy / ROW))) : -1;
-  const down = (pos, e) => { e.preventDefault(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch (er){} setDrag({ pos, y0: e.clientY, dy: 0 }); };
-  const move = e => { if (drag) setDrag(Object.assign({}, drag, { dy: e.clientY - drag.y0 })); };
-  const up = () => { if (!drag) return; const o = order.slice(), [x] = o.splice(drag.pos, 1); o.splice(target, 0, x); setOrder(o); setDrag(null); };
+  const targetOf = d => Math.max(0, Math.min(n - 1, d.pos + Math.round(d.dy / ROW)));
+  const begin = (pos, y) => { const d = { pos, y0: y, dy: 0 }; dragRef.current = d; setDrag(d); };
+  useEffect(() => {
+    const move = e => { const d = dragRef.current; if (!d) return; e.preventDefault(); const nd = Object.assign({}, d, { dy: e.clientY - d.y0 }); dragRef.current = nd; setDrag(nd); };
+    const up = () => {
+      const d = dragRef.current; if (!d) return;
+      const o = orderRef.current.slice(), [x] = o.splice(d.pos, 1); o.splice(targetOf(d), 0, x);
+      orderRef.current = o; dragRef.current = null; setOrder(o); setDrag(null);
+      if (start) onDone(o);
+    };
+    const stopScroll = e => { if (dragRef.current) e.preventDefault(); };
+    window.addEventListener('pointermove', move, { passive: false });
+    window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
+    window.addEventListener('touchmove', stopScroll, { passive: false });
+    return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); window.removeEventListener('touchmove', stopScroll); };
+  }, []);
+  /* coming from a card: put the picked exercise right under the finger */
+  useEffect(() => {
+    if (!start || !listRef.current) return;
+    const top = listRef.current.getBoundingClientRect().top;
+    const dy = start.y - (top + start.pos * ROW + 26);
+    const d = { pos: start.pos, y0: start.y - dy, dy };
+    dragRef.current = d; setDrag(d);
+  }, []);
+  const target = drag ? targetOf(drag) : -1;
   return html`<section class="card reorder">
-    <div class="row-between"><h2 class="card-title">Reorder exercises</h2><button class="btn btn-pop sm" onClick=${() => onDone(order)}>Done</button></div>
-    <p class="hint">Hold the handle and drag an exercise up or down.</p>
-    <div class="rlist" style=${'height:' + n * ROW + 'px'}>
+    <div class="row-between"><h2 class="card-title">Reorder exercises</h2>${!start && html`<button class="btn btn-pop sm" onClick=${() => onDone(orderRef.current)}>Done</button>`}</div>
+    ${!start && html`<p class="hint">Press and drag an exercise up or down.</p>`}
+    <div class="rlist" ref=${listRef} style=${'height:' + n * ROW + 'px'}>
       ${order.map((orig, pos) => {
         let y = pos * ROW;
         if (drag){ if (pos === drag.pos) y += drag.dy; else if (drag.pos < pos && pos <= target) y -= ROW; else if (target <= pos && pos < drag.pos) y += ROW; }
-        return html`<div key=${orig} class=${'rrow' + (drag && pos === drag.pos ? ' lifted' : '')} style=${'transform:translateY(' + y + 'px)'}>
+        return html`<div key=${orig} class=${'rrow' + (drag && pos === drag.pos ? ' lifted' : '')} style=${'transform:translateY(' + y + 'px)'}
+          onPointerDown=${e => { e.preventDefault(); begin(pos, e.clientY); }}>
           <span class="grow row-title">${names[orig]}</span>
-          <span class="rhandle" aria-label=${'Drag ' + names[orig]} onPointerDown=${e => down(pos, e)} onPointerMove=${move} onPointerUp=${up} onPointerCancel=${up}><${Ico} d=${UI.grip} size=${22}/></span>
+          <span class="rhandle" aria-hidden="true"><${Ico} d=${UI.grip} size=${22}/></span>
         </div>`;
       })}
     </div>
@@ -469,7 +493,7 @@ function WorkoutDetail({ env, id, justDone }){
     ${w.exercises.map((e, i) => { let n = 0; const ex = exById(e.ex); return html`<section key=${i} class="card">
       <button class="exname" onClick=${() => env.go({ type: 'ex', id: e.ex, back: { type: 'detail', id } })}>${ex.n}</button>
       <div class="list tight">${e.sets.map((s, j) => html`<div key=${j} class="hset">
-        <span class=${'stype t-' + s.t}>${s.t === 'w' ? 'W' : ++n}</span>
+        <span class=${'stype t-' + s.t}>${s.t === 'w' ? 'W' : s.t === 'f' ? 'F' : s.t === 'd' ? 'D' : ++n}</span>
         <span class="grow">${r1(s.kg)} kg × ${s.reps}${s.rpe ? html` <span class="cat-sub">@ ${s.rpe}</span>` : ''}</span>
         ${s.pr && html`<span class="prs">★ ${s.pr.map(k => k === 'kg' ? 'heaviest' : k === '1rm' ? 'best 1RM' : 'best set').join(', ')}</span>`}
       </div>`)}</div>
@@ -664,9 +688,8 @@ function RoutineEditor({ env, id, seed }){
     <div class="topbar"><button class="link" onClick=${env.home}><${Ico} d=${UI.back} size=${18} sw=${2.6}/>Cancel</button><h1>${id ? 'Edit routine' : 'New routine'}</h1><button class="link" onClick=${save}>Save</button></div>
     <input class="input meal-name" aria-label="Routine name" placeholder="Routine name, like “Push day”" value=${r.name} onInput=${e => set({ name: e.target.value })}/>
     ${err && html`<p class="status bad">${err}</p>`}
-    ${sheet && sheet.kind === 'reorder'
-      ? html`<${ReorderList} names=${r.items.map(it => exById(it.ex).n)} onDone=${order => { set(prev => ({ items: order.map(i => prev.items[i]) })); setSheet(null); }}/>`
-      : r.items.map((e, i) => html`<${ExerciseBlock} key=${e.id} env=${env} e=${e} idx=${i} updEx=${updEx} setSheet=${setSheet} routine=${true}/>`)}
+    ${sheet && sheet.kind === 'reorder' && html`<${ReorderList} names=${r.items.map(it => exById(it.ex).n)} start=${sheet.start} onDone=${order => { set(prev => ({ items: order.map(i => prev.items[i]) })); setSheet(null); }}/>`}
+    <div class="blocks" hidden=${!!(sheet && sheet.kind === 'reorder')}>${r.items.map((e, i) => html`<${ExerciseBlock} key=${e.id} env=${env} e=${e} idx=${i} updEx=${updEx} setSheet=${setSheet} routine=${true}/>`)}</div>
     ${r.items.length === 0 && html`<section class="card"><p class="hint">Add the exercises for this routine. Set the number of sets, and optionally the kg and reps to aim for. When you start it, your numbers from last time show up next to each set.</p></section>`}
     <button class="btn btn-solid" onClick=${() => setSheet({ kind: 'pick' })}>+ Add exercises</button>
     <button class="btn btn-pop" onClick=${save}>Save routine</button>
