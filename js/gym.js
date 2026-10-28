@@ -23,7 +23,11 @@ function useLib(){
   return LIB;
 }
 const customs = () => store.list('exercises/');
+/* Exercises that were merged into a database entry when names were standardised */
+const MOVED = { x_Hip_Abduction_Machine: 'Thigh_Abductor', x_Hip_Adduction_Machine: 'Thigh_Adductor', x_Overhead_Triceps_Extension_Cable: 'Cable_Rope_Overhead_Triceps_Extension',
+  x_Seated_Calf_Raise_Machine: 'Seated_Calf_Raise', x_Rear_Delt_Fly_Cable: 'Cable_Rear_Delt_Fly', x_Shrug_Machine: 'Leverage_Shrug' };
 export function exById(id){
+  id = MOVED[id] || id;
   const c = store.get('exercises/' + id);
   if (c) return c;
   return (LIB || []).find(e => e.id === id) || { id, n: 'Exercise', p: [], s: [], e: 'other', in: [], im: 0 };
@@ -505,52 +509,78 @@ function finishWorkout(cur){
 
 /* ---------- Exercise picker ---------- */
 /* Search ranking: a common gym name (alias) first, then names that start with or contain the words */
-export const rank = (x, ql) => { const n = x.n.toLowerCase(), al = (x.a || '').split(',').map(t => t.trim());
-  return (al.includes(ql) ? 8 : al.some(t => t.startsWith(ql)) ? 5 : 0) + (n.startsWith(ql) ? 3 : n.includes(ql) ? 2 : 0) + (x.custom ? 1 : 0); };
+const esc = t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+export const rank = (x, ql) => {
+  const n = x.n.toLowerCase(), al = (x.a || '').split(',').map(t => t.trim());
+  let r = 0;
+  if (n === ql || al.includes(ql)) r += 60;
+  else if (n.startsWith(ql) || al.some(t => t.startsWith(ql))) r += 35;
+  else if (new RegExp('\\b' + esc(ql)).test(n)) r += 20;
+  if (x.pop) r += 40 - Math.min(39, x.pop * 0.3);          /* the common gym exercises come first */
+  if (x.custom) r += 15;
+  if (/plyometrics|strongman|olympic/.test(x.c)) r -= 15;
+  return r;
+};
+/* No search text: what you used lately, then the most common exercises, then the rest A to Z */
+export const defaultOrder = (list, recent) => list.slice().sort((a, b) =>
+  ((a.id in recent ? recent[a.id] : 999) - (b.id in recent ? recent[b.id] : 999)) || ((b.custom ? 1 : 0) - (a.custom ? 1 : 0)) || ((a.pop || 999) - (b.pop || 999)) || a.n.localeCompare(b.n));
+/* Full-screen exercise picker, like Hevy: tap rows to select, ⓘ for the preview, Add (n) top right.
+   With nothing selected the top-right button is Create (a custom exercise, made right here). */
 function PickerSheet({ env, close, onPick }){
   const [q, setQ] = useState('');
   const [mus, setMus] = useState('');
   const [eq, setEq] = useState('');
   const [sel, setSel] = useState([]);
   const [limit, setLimit] = useState(60);
+  const [peek, setPeek] = useState(null);
+  const [creating, setCreating] = useState(false);
+  useEffect(() => { document.body.classList.add('noscroll'); return () => document.body.classList.remove('noscroll'); }, []);
   const ql = q.trim().toLowerCase();
   const words = ql.split(/\s+/).filter(Boolean);
   const recent = {}; workoutsList().slice(0, 30).forEach((w, i) => w.exercises.forEach(e => { if (!(e.ex in recent)) recent[e.ex] = i; }));
   let list = allExercises().filter(x => (!mus || x.p.includes(mus)) && (!eq || x.e === eq) && words.every(wd => (x.n + ' ' + (x.a || '')).toLowerCase().includes(wd)));
-  if (!ql) list = list.slice().sort((a, b) => (a.id in recent ? recent[a.id] : 999) - (b.id in recent ? recent[b.id] : 999) || (b.custom ? 1 : 0) - (a.custom ? 1 : 0));
-  else list = list.slice().sort((a, b) => rank(b, ql) - rank(a, ql) || a.n.length - b.n.length);
-  const toggle = id => setSel(sel.includes(id) ? sel.filter(x => x !== id) : sel.concat([id]));
-  const [peek, setPeek] = useState(null);
-  const go = sel.length > 0 && html`<button class="btn btn-pop picker-go" onClick=${() => onPick(sel)}>Add ${plural(sel.length, 'exercise', 'exercises')}</button>`;
-  if (peek){
+  list = !ql ? defaultOrder(list, recent) : list.slice().sort((a, b) => (rank(b, ql) + (b.id in recent ? 25 : 0)) - (rank(a, ql) + (a.id in recent ? 25 : 0)) || a.n.length - b.n.length);
+  const toggle = id => setSel(prev => prev.includes(id) ? prev.filter(x => x !== id) : prev.concat([id]));
+  const topRight = sel.length
+    ? html`<button class="pk-btn go" onClick=${() => onPick(sel)}>Add (${sel.length})</button>`
+    : html`<button class="pk-btn" onClick=${() => setCreating(true)}>Create</button>`;
+  let body;
+  if (creating) body = html`<${CustomExercise} env=${env} inline=${true} onCancel=${() => setCreating(false)} onSaved=${nid => { setCreating(false); setSel(prev => prev.concat([nid])); }}/>`;
+  else if (peek){
     const x = exById(peek), on = sel.includes(peek);
-    return html`<${Sheet} title=${x.n} close=${close} tall=${true}>
-      <button class="link sm-link" onClick=${() => setPeek(null)}><${Ico} d=${UI.back} size=${16} sw=${2.6}/>All exercises</button>
+    body = html`<div class="stack-sm pk-peek">
+      <h2 class="card-title gold">${x.n}</h2>
       <${ExerciseInfo} ex=${x}/>
-      <button class=${'btn ' + (on ? 'btn-ghost' : 'btn-solid')} onClick=${() => { toggle(peek); if (!on) setPeek(null); }}>${on ? 'Selected ✓ · tap to unselect' : 'Select this exercise'}</button>
-      ${go}
-    <//>`;
-  }
-  return html`<${Sheet} title="Add exercises" close=${close} tall=${true}>
-    <div class="search"><${Ico} d=${UI.search} size=${18}/><input type="search" aria-label="Search exercises" placeholder="Search exercises" value=${q} onInput=${e => { setQ(e.target.value); setLimit(60); }}/></div>
-    <div class="filters">
-      <select aria-label="Muscle" value=${mus} onChange=${e => setMus(e.target.value)}><option value="">All muscles</option>${MUSCLES.map(m => html`<option key=${m} value=${m}>${MUSCLE_NAMES[m]}</option>`)}</select>
-      <select aria-label="Equipment" value=${eq} onChange=${e => setEq(e.target.value)}><option value="">All equipment</option>${EQUIP.map(m => html`<option key=${m} value=${m}>${cap(m)}</option>`)}</select>
+      <button class=${'btn ' + (on ? 'btn-ghost' : 'btn-solid')} onClick=${() => { toggle(peek); setPeek(null); }}>${on ? 'Unselect' : 'Select'}</button>
+    </div>`;
+  } else body = html`
+    <div class="pk-tools">
+      <div class="search"><${Ico} d=${UI.search} size=${18}/><input type="search" aria-label="Search exercises" placeholder="Search exercise" value=${q} onInput=${e => { setQ(e.target.value); setLimit(60); }}/></div>
+      <div class="filters">
+        <select aria-label="Equipment" value=${eq} onChange=${e => setEq(e.target.value)}><option value="">All equipment</option>${EQUIP.map(m => html`<option key=${m} value=${m}>${cap(m)}</option>`)}</select>
+        <select aria-label="Muscle" value=${mus} onChange=${e => setMus(e.target.value)}><option value="">All muscles</option>${MUSCLES.map(m => html`<option key=${m} value=${m}>${MUSCLE_NAMES[m]}</option>`)}</select>
+      </div>
+      <span class="pk-label">${ql ? 'Search results' : Object.keys(recent).length ? 'Recent and popular' : 'Popular exercises'}</span>
     </div>
-    <div class="list">
-      ${list.slice(0, limit).map(x => { const on = sel.includes(x.id); const th = exThumb(x); return html`<div key=${x.id} class=${'exrow pick' + (on ? ' on' : '')}>
-        <button class="exrow-main" onClick=${() => setPeek(x.id)}>
-          <span class="thumb">${th ? html`<img src=${th} alt="" loading="lazy"/>` : html`<${Ico} d=${UI.gym} size=${18}/>`}</span>
-          <span class="col grow"><span class="row-title">${x.n}${x.custom ? html` <span class="pill">custom</span>` : ''}</span><span class="row-sub">${muscleLine(x)}</span></span>
+    <div class="pk-list">
+      ${list.slice(0, limit).map(x => { const on = sel.includes(x.id); const th = exThumb(x); return html`<div key=${x.id} class=${'pk-row' + (on ? ' on' : '')}>
+        <button class="pk-main" aria-pressed=${String(on)} onClick=${() => toggle(x.id)}>
+          <span class="pk-thumb">${th ? html`<img src=${th} alt="" loading="lazy"/>` : html`<${Ico} d=${UI.gym} size=${18}/>`}</span>
+          <span class="col grow"><span class="pk-name">${x.n}${x.custom ? html` <span class="pill">custom</span>` : ''}</span><span class="pk-sub">${x.p.map(m => MUSCLE_NAMES[m] || cap(m)).join(', ') || cap(x.c)}</span></span>
         </button>
-        <button class=${'selbtn' + (on ? ' on' : '')} aria-pressed=${String(on)} aria-label=${(on ? 'Unselect ' : 'Select ') + x.n} onClick=${() => toggle(x.id)}><${Ico} d=${on ? UI.check : UI.plus} size=${16} sw=${3}/></button>
+        <button class="pk-info" aria-label=${'About ' + x.n} onClick=${() => setPeek(x.id)}>i</button>
       </div>`; })}
-      ${list.length > limit && html`<button class="btn btn-ghost sm" onClick=${() => setLimit(limit + 100)}>Show more (${list.length - limit})</button>`}
-      ${list.length === 0 && html`<p class="hint">Nothing matches. Try another word, or create it as a custom exercise.</p>`}
+      ${list.length > limit && html`<button class="btn btn-ghost sm pk-more" onClick=${() => setLimit(limit + 100)}>Show more (${list.length - limit})</button>`}
+      ${list.length === 0 && html`<p class="hint pk-more">Nothing matches. Tap Create to make it as a custom exercise.</p>`}
+    </div>`;
+  return html`<div class="picker" role="dialog" aria-modal="true" aria-label="Add exercise">
+    <div class="pk-top">
+      <button class="pk-btn" onClick=${() => creating ? setCreating(false) : peek ? setPeek(null) : close()}>${peek || creating ? 'Back' : 'Cancel'}</button>
+      <h1>${creating ? 'New exercise' : peek ? 'Exercise' : 'Add exercise'}</h1>
+      ${creating ? html`<span></span>` : topRight}
     </div>
-    <button class="row-btn" onClick=${() => { close(); env.go({ type: 'custom', id: null, back: { type: 'workout' } }); }}><span class="grow">Can’t find it? Create a custom exercise</span><${Ico} d=${UI.plus} size=${16}/></button>
-    ${go}
-  <//>`;
+    <div class="pk-body">${body}</div>
+  </div>`;
 }
 
 /* ---------- Finished workout ---------- */
@@ -677,7 +707,8 @@ function LibraryList({ env }){
   const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const done = new Set(); store.list('workouts/').forEach(w => w.exercises.forEach(e => done.add(e.ex)));
   const list = allExercises().filter(x => (!mus || x.p.includes(mus)) && words.every(wd => (x.n + ' ' + (x.a || '')).toLowerCase().includes(wd)))
-    .sort((a, b) => (done.has(b.id) ? 1 : 0) - (done.has(a.id) ? 1 : 0) || (words.length ? rank(b, words.join(' ')) - rank(a, words.join(' ')) || a.n.length - b.n.length : 0));
+    .sort((a, b) => words.length ? (rank(b, words.join(' ')) + (done.has(b.id) ? 25 : 0)) - (rank(a, words.join(' ')) + (done.has(a.id) ? 25 : 0)) || a.n.length - b.n.length
+      : ((done.has(b.id) ? 1 : 0) - (done.has(a.id) ? 1 : 0)) || ((a.pop || 999) - (b.pop || 999)) || a.n.localeCompare(b.n));
   return html`<div class="stack">
     <div class="search"><${Ico} d=${UI.search} size=${18}/><input type="search" aria-label="Search exercises" placeholder=${'Search ' + allExercises().length + ' exercises'} value=${q} onInput=${e => setQ(e.target.value)}/></div>
     <div class="filters"><select aria-label="Muscle" value=${mus} onChange=${e => setMus(e.target.value)}><option value="">All muscles</option>${MUSCLES.map(m => html`<option key=${m} value=${m}>${MUSCLE_NAMES[m]}</option>`)}</select></div>
@@ -704,7 +735,7 @@ function shrinkPhoto(file){
     img.src = url;
   });
 }
-function CustomExercise({ env, id }){
+function CustomExercise({ env, id, inline, onSaved, onCancel }){
   const { app } = env;
   const old = id ? store.get('exercises/' + id) : null;
   const [x, setX] = useState(() => old ? clone(old) : { n: '', desc: '', p: [], s: [], e: 'machine', photo: '' });
@@ -717,11 +748,11 @@ function CustomExercise({ env, id }){
     if (!x.p.length){ setErr('Pick at least one main muscle.'); return; }
     const nid = id || 'c_' + uid();
     store.set('exercises/' + nid, Object.assign({}, x, { id: nid, n: x.n.trim(), s: x.s.filter(m => !x.p.includes(m)), custom: true, in: [], im: 0 }));
-    app.showToast('Exercise saved.'); env.go({ type: 'ex', id: nid });
+    app.showToast('Exercise saved.'); if (onSaved) onSaved(nid); else env.go({ type: 'ex', id: nid });
   };
   const used = id && store.list('workouts/').some(w => w.exercises.some(e => e.ex === id));
   return html`<div class="stack">
-    <${Bar} title=${id ? 'Edit exercise' : 'Custom exercise'} back=${() => id ? env.go({ type: 'ex', id }) : env.home()}/>
+    ${!inline && html`<${Bar} title=${id ? 'Edit exercise' : 'Custom exercise'} back=${() => id ? env.go({ type: 'ex', id }) : env.home()}/>`}
     <section class="card">
       <div class="field"><label class="label" for="cx-name">Name</label><input id="cx-name" class="input inset" value=${x.n} onInput=${e => set({ n: e.target.value })}/></div>
       <div class="field"><label class="label" for="cx-desc">How to do it</label><textarea id="cx-desc" class="input inset area" rows="3" value=${x.desc} onInput=${e => set({ desc: e.target.value })}></textarea></div>
