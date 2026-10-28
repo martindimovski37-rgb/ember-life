@@ -5,7 +5,7 @@
          exercises/<id> = custom exercise { id, n, p, s, e, desc, photo, custom: true }
          exnotes/<exId> = { note, rest }   (sticky per exercise)
    Set types: n normal, w warm-up, f failure, d drop set. Warm-ups never count for records or muscle sets. */
-import { html, useState, useEffect, useRef, Ico, UI, uid, clone, plural, scrollTop, dayKey, parseKey, fmtShort, weekStartKey } from './lib.js';
+import { html, useState, useEffect, useRef, Ico, UI, uid, clone, plural, scrollTop, dayKey, parseKey, fmtShort, fmtMonth, weekStartKey } from './lib.js';
 import { store } from './store.js';
 import { BodyMap, MUSCLE_NAMES } from './bodymap.js';
 
@@ -85,8 +85,16 @@ export function GymTab({ app, ui, setUi }){
   if (v && v.type === 'routine') return html`<${RoutineEditor} key=${v.id || 'new'} env=${env} id=${v.id} seed=${v.seed}/>`;
   if (v && v.type === 'library') return html`<${LibraryView} env=${env}/>`;
   if (v && v.type === 'custom') return html`<${CustomExercise} key=${v.id || 'new'} env=${env} id=${v.id}/>`;
-  return html`<${GymHome} env=${env} active=${active}/>`;
+  const sub = ui.gsub || 'workout';
+  return html`<div class="stack">
+    <header class="head"><h1 class="grow">Gym</h1></header>
+    <div class="seg" role="group" aria-label="Gym section">
+      ${GSUBS.map(([k, l]) => html`<button key=${k} aria-pressed=${String(sub === k)} onClick=${() => { setUi({ gsub: k, gview: null }); scrollTop(); }}>${l}</button>`)}
+    </div>
+    ${sub === 'history' ? html`<${HistoryView} env=${env} ui=${ui} setUi=${setUi}/>` : sub === 'exercises' ? html`<${LibraryList} env=${env}/>` : html`<${GymHome} env=${env} active=${active}/>`}
+  </div>`;
 }
+const GSUBS = [['workout', 'Workout'], ['history', 'History'], ['exercises', 'Exercises']];
 
 /* Routine items: { ex, rest, sets: [{ t, kg, reps }] } with kg/reps as the target (may be empty).
    Older routines stored counts ({ warm, sets: 3 }); they're converted when read. */
@@ -130,16 +138,10 @@ function GymHome({ env, active }){
     if (store.get('gym/active')){ env.app.showToast('Finish or discard the workout in progress first.'); env.go({ type: 'workout' }); return; }
     startWorkout(app, r); env.go({ type: 'workout' });
   };
-  return html`<div class="stack">
-    <header class="head"><h1 class="grow">Gym</h1></header>
+  return html`
     ${active
       ? html`<button class="bigbtn live" onClick=${() => env.go({ type: 'workout' })}><span class="wdot"></span><span class="grow">Resume ${active.name}</span><${Ico} d=${UI.fwd} size=${20}/></button>`
       : html`<button class="bigbtn" onClick=${() => start(null)}><${Ico} d=${UI.plus} size=${24}/><span class="grow">Start empty workout</span></button>`}
-    <${RoutinesSection} env=${env} routines=${routines} start=${start}/>
-    <section class="card">
-      <div class="row-between"><h2 class="card-title">${plural(week.length, 'workout', 'workouts')} this week</h2>${streak > 1 && html`<span class="streak">${streak}-week streak</span>`}</div>
-      <div class="weekdots">${days.map(d => { const n = all.filter(w => w.date === d).length; return html`<span key=${d} class=${d === today ? 'today' : ''}><i class=${n ? 'on' : ''}></i>${parseKey(d).toLocaleDateString(undefined, { weekday: 'narrow' })}</span>`; })}</div>
-    </section>
     <section class="card">
       <div class="body-row">
         <${BodyMap} sets=${sets} height=${178}/>
@@ -151,17 +153,52 @@ function GymHome({ env, active }){
       </div>
       ${ranked.length > 0 && missing.length > 0 && html`<p class="hint">Not trained yet this week: ${missing.join(', ')}.</p>`}
     </section>
-    <section class="stack-sm">
-      <div class="row-between"><h2 class="label">Recent workouts</h2><button class="link" onClick=${() => env.go({ type: 'library' })}>Exercises</button></div>
-      ${all.slice(0, 15).map(w => html`<button key=${w.id} class="wcard" onClick=${() => env.go({ type: 'detail', id: w.id })}>
-        <span class="row-between"><span class="row-title">${w.name}</span><span class="cat-sub">${relDay(w.date, today)} · ${fmtDur(w.end - w.start)}</span></span>
-        <span class="row-between"><span class="row-sub">${fmtT(volumeOf(w))} · ${plural(setsOf(w), 'set', 'sets')}</span>${w.prs > 0 && html`<span class="prs">★ ${plural(w.prs, 'record', 'records')}</span>`}</span>
-        <span class="row-sub wrap">${w.exercises.slice(0, 4).map(e => exById(e.ex).n + ' ' + e.sets.filter(working).length + '×').join(' · ')}${w.exercises.length > 4 ? ' …' : ''}</span>
-      </button>`)}
-      ${all.length === 0 && html`<section class="card"><p class="hint">Your workouts show up here. Tap “Start workout”, add exercises and log your sets.</p></section>`}
+    <section class="card">
+      <div class="row-between"><h2 class="card-title">${plural(week.length, 'workout', 'workouts')} this week</h2>${streak > 1 && html`<span class="streak">${streak}-week streak</span>`}</div>
+      <div class="weekdots">${days.map(d => { const n = all.filter(w => w.date === d).length; return html`<span key=${d} class=${d === today ? 'today' : ''}><i class=${n ? 'on' : ''}></i>${parseKey(d).toLocaleDateString(undefined, { weekday: 'narrow' })}</span>`; })}</div>
     </section>
-  </div>`;
+    <${RoutinesSection} env=${env} routines=${routines} start=${start}/>`;
 }
+
+/* ---------- History: month calendar + every workout ---------- */
+function WorkoutCard({ env, w, today }){
+  return html`<button class="wcard" onClick=${() => env.go({ type: 'detail', id: w.id })}>
+    <span class="row-between"><span class="row-title">${w.name}</span><span class="cat-sub">${relDay(w.date, today)} · ${fmtDur(w.end - w.start)}</span></span>
+    <span class="row-between"><span class="row-sub">${fmtT(volumeOf(w))} · ${plural(setsOf(w), 'set', 'sets')}</span>${w.prs > 0 && html`<span class="prs">★ ${plural(w.prs, 'record', 'records')}</span>`}</span>
+    <span class="row-sub wrap">${w.exercises.slice(0, 4).map(e => exById(e.ex).n + ' ' + e.sets.filter(working).length + '×').join(' · ')}${w.exercises.length > 4 ? ' …' : ''}</span>
+  </button>`;
+}
+function HistoryView({ env, ui, setUi }){
+  const today = env.app.today;
+  const month = ui.gmonth || today.slice(0, 7);
+  const [day, setDay] = useState(null);
+  const all = workoutsList();
+  const inMonth = all.filter(w => w.date.slice(0, 7) === month);
+  const shiftMonth = n => { const d = parseKey(month + '-01'); d.setMonth(d.getMonth() + n); setUi({ gmonth: dayKey(d).slice(0, 7) }); setDay(null); };
+  const first = parseKey(month + '-01'), lead = (first.getDay() + 6) % 7, daysIn = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+  const cells = Array.from({ length: lead }, () => null).concat(Array.from({ length: daysIn }, (_, i) => month + '-' + String(i + 1).padStart(2, '0')));
+  const shown = day ? inMonth.filter(w => w.date === day) : inMonth;
+  const mins = inMonth.reduce((a, w) => a + (w.end - w.start), 0);
+  return html`
+    <section class="card">
+      <div class="daynav cal-nav">
+        <button class="icon-btn" aria-label="Previous month" onClick=${() => shiftMonth(-1)}><${Ico} d=${UI.back}/></button>
+        <span class="daynav-label">${fmtMonth(month)}</span>
+        <button class="icon-btn" aria-label="Next month" disabled=${month >= today.slice(0, 7)} onClick=${() => shiftMonth(1)}><${Ico} d=${UI.fwd}/></button>
+      </div>
+      <div class="cal">
+        ${['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => html`<span key=${'h' + i} class="cal-h">${d}</span>`)}
+        ${cells.map((d, i) => { if (!d) return html`<span key=${'e' + i}></span>`; const n = inMonth.filter(w => w.date === d).length;
+          return html`<button key=${d} class=${'cal-d' + (n ? ' on' : '') + (d === today ? ' today' : '') + (d === day ? ' sel' : '')} disabled=${!n} aria-label=${fmtShort(d) + (n ? ', ' + plural(n, 'workout', 'workouts') : '')}
+            onClick=${() => setDay(day === d ? null : d)}>${Number(d.slice(8))}</button>`; })}
+      </div>
+      <p class="hint">${inMonth.length ? plural(inMonth.length, 'workout', 'workouts') + ' · ' + fmtDur(mins) + ' in total · ' + fmtT(inMonth.reduce((a, w) => a + volumeOf(w), 0)) + ' lifted' : 'No workouts this month.'}</p>
+    </section>
+    ${day && html`<div class="row-between"><h2 class="label">${fmtShort(day)}</h2><button class="link" onClick=${() => setDay(null)}>Show whole month</button></div>`}
+    <div class="list">${shown.map(w => html`<${WorkoutCard} key=${w.id} env=${env} w=${w} today=${today}/>`)}</div>
+    ${all.length === 0 && html`<section class="card"><p class="hint">Finished workouts show up here, with a calendar of the days you trained.</p></section>`}`;
+}
+
 /* ---------- Routines on the Gym home: Hevy-style cards in collapsible folders ----------
    gym/folders = { list: [{ id, name }], closed: { folderId|'mine': true } }; a routine's folder is routine.folder (none = My Routines) */
 const foldersDoc = () => Object.assign({ list: [], closed: {} }, store.get('gym/folders') || {});
@@ -173,8 +210,8 @@ function RoutinesSection({ env, routines, start }){
   const saveFd = patch => store.set('gym/folders', Object.assign({}, fd, patch));
   const toggle = fid => saveFd({ closed: Object.assign({}, fd.closed, { [fid]: !fd.closed[fid] }) });
   const known = new Set(fd.list.map(f => f.id));
-  const groups = fd.list.map(f => ({ id: f.id, name: f.name, items: routines.filter(r => r.folder === f.id) }))
-    .concat([{ id: 'mine', name: 'My Routines', items: routines.filter(r => !r.folder || !known.has(r.folder)) }]);
+  const groups = [{ id: 'mine', name: 'My Routines', items: routines.filter(r => !r.folder || !known.has(r.folder)) }]
+    .concat(fd.list.map(f => ({ id: f.id, name: f.name, items: routines.filter(r => r.folder === f.id) })));
   const nameSheet = (title, initial, ok) => { setName(initial); setSheet({ kind: 'name', title, ok }); };
   const newFolder = () => nameSheet('New folder', '', n => saveFd({ list: fd.list.concat([{ id: uid(), name: n }]) }));
   const routineMenu = r => setSheet({ kind: 'routine', r });
@@ -184,21 +221,24 @@ function RoutinesSection({ env, routines, start }){
   const del = r => { setSheet(null); app.setSheet({ kind: 'confirm', title: 'Delete ' + r.name + '?', ok: 'Delete', danger: true, text: 'Past workouts stay in your history.',
     run: () => { const doc = store.get('routines/' + r.id); store.del('routines/' + r.id); app.showToast('Routine deleted.', { label: 'Undo', run: () => store.set('routines/' + r.id, doc) }); } }); };
   return html`<section class="stack-sm">
-    <div class="row-between"><h2 class="section-t">Routines</h2><button class="icon-btn" aria-label="New folder" onClick=${newFolder}><${Ico} d=${UI.folderPlus} size=${24}/></button></div>
-    <button class="bigbtn sm" onClick=${() => env.go({ type: 'routine', id: null })}><${Ico} d=${UI.clipboard} size=${22}/><span class="grow">New routine</span></button>
-    ${groups.map(g => (g.id !== 'mine' || g.items.length > 0 || fd.list.length === 0) && html`<div key=${g.id} class="folder">
-      <div class="folder-head">
+    <div class="row-between"><h2 class="section-t">Routines</h2>
+      <span class="row-actions">
+        <button class="icon-btn sq" aria-label="New routine" onClick=${() => env.go({ type: 'routine', id: null })}><${Ico} d=${UI.clipboard} size=${22}/></button>
+        <button class="icon-btn sq" aria-label="New folder" onClick=${newFolder}><${Ico} d=${UI.folderPlus} size=${22}/></button>
+      </span></div>
+    ${groups.map(g => html`<div key=${g.id} class="folder">
+      ${g.id !== 'mine' && html`<div class="folder-head">
         <button class="folder-t" aria-expanded=${String(!fd.closed[g.id])} onClick=${() => toggle(g.id)}><span class=${'tri' + (fd.closed[g.id] ? ' shut' : '')}>▾</span>${g.name} (${g.items.length})</button>
-        ${g.id !== 'mine' && html`<button class="icon-btn" aria-label=${'Options for folder ' + g.name} onClick=${() => folderMenu(g)}><${Ico} d=${UI.dots} size=${20}/></button>`}
-      </div>
-      ${!fd.closed[g.id] && html`<div class="list">
+        <button class="icon-btn" aria-label=${'Options for folder ' + g.name} onClick=${() => folderMenu(g)}><${Ico} d=${UI.dots} size=${20}/></button>
+      </div>`}
+      ${(g.id === 'mine' || !fd.closed[g.id]) && html`<div class="list">
         ${g.items.map(r => html`<div key=${r.id} class="rcard">
           <div class="row-between"><button class="rcard-t" onClick=${() => env.go({ type: 'routine', id: r.id })}>${r.name}</button>
             <button class="icon-btn" aria-label=${'Options for ' + r.name} onClick=${() => routineMenu(r)}><${Ico} d=${UI.dots} size=${22}/></button></div>
           <p class="rcard-ex">${r.items.map(it => exById(it.ex).n).join(', ') || 'No exercises yet'}</p>
           <button class="btn btn-pop" onClick=${() => start(r)}>Start routine</button>
         </div>`)}
-        ${g.items.length === 0 && html`<p class="hint">${g.id === 'mine' ? 'Save the workouts you repeat, like “Push day”, and start them with one tap.' : 'Empty. Move routines here with their ⋯ menu.'}</p>`}
+        ${g.items.length === 0 && (g.id !== 'mine' || routines.length === 0) && html`<p class="hint">${g.id === 'mine' ? 'Tap the clipboard to save the workouts you repeat, like “Push day”, and start them with one tap.' : 'Empty. Move routines here with their ⋯ menu.'}</p>`}
       </div>`}
     </div>`)}
     ${sheet && sheet.kind === 'name' && html`<${Sheet} title=${sheet.title} close=${() => setSheet(null)}>
@@ -557,7 +597,7 @@ function Bar({ title, back, right }){
 /* ---------- Exercise detail: records, chart, history, how-to ---------- */
 function ExerciseDetail({ env, id, back }){
   const ex = exById(id);
-  const goBack = () => back ? env.go(back) : env.go({ type: 'library' });
+  const goBack = () => back ? env.go(back) : env.home();
   const sessions = workoutsList().filter(w => w.exercises.some(e => e.ex === id)).map(w => ({ w, sets: w.exercises.filter(e => e.ex === id).flatMap(e => e.sets).filter(working) }));
   const all = sessions.flatMap(s => s.sets);
   const best = all.reduce((b, s) => ({ kg: Math.max(b.kg, s.kg), orm: Math.max(b.orm, e1rm(s.kg, s.reps)), vol: Math.max(b.vol, s.kg * s.reps), reps: Math.max(b.reps, s.reps) }), { kg: 0, orm: 0, vol: 0, reps: 0 });
@@ -638,6 +678,9 @@ function Chart({ points }){
 
 /* ---------- Library ---------- */
 function LibraryView({ env }){
+  return html`<div class="stack"><${Bar} title="Exercises" back=${env.home} right=${html`<button class="link" onClick=${() => env.go({ type: 'custom', id: null })}>+ Custom</button>`}/><${LibraryList} env=${env}/></div>`;
+}
+function LibraryList({ env }){
   const [q, setQ] = useState('');
   const [mus, setMus] = useState('');
   const [limit, setLimit] = useState(80);
@@ -646,7 +689,6 @@ function LibraryView({ env }){
   const list = allExercises().filter(x => (!mus || x.p.includes(mus)) && words.every(wd => (x.n + ' ' + (x.a || '')).toLowerCase().includes(wd)))
     .sort((a, b) => (done.has(b.id) ? 1 : 0) - (done.has(a.id) ? 1 : 0) || (words.length ? rank(b, words.join(' ')) - rank(a, words.join(' ')) || a.n.length - b.n.length : 0));
   return html`<div class="stack">
-    <${Bar} title="Exercises" back=${env.home} right=${html`<button class="link" onClick=${() => env.go({ type: 'custom', id: null })}>+ Custom</button>`}/>
     <div class="search"><${Ico} d=${UI.search} size=${18}/><input type="search" aria-label="Search exercises" placeholder=${'Search ' + allExercises().length + ' exercises'} value=${q} onInput=${e => setQ(e.target.value)}/></div>
     <div class="filters"><select aria-label="Muscle" value=${mus} onChange=${e => setMus(e.target.value)}><option value="">All muscles</option>${MUSCLES.map(m => html`<option key=${m} value=${m}>${MUSCLE_NAMES[m]}</option>`)}</select></div>
     <div class="list">
@@ -657,6 +699,7 @@ function LibraryView({ env }){
       </button>`; })}
       ${list.length > limit && html`<button class="btn btn-ghost sm" onClick=${() => setLimit(limit + 150)}>Show more (${list.length - limit})</button>`}
     </div>
+    <button class="row-btn" onClick=${() => env.go({ type: 'custom', id: null })}><span class="grow">Can’t find it? Create a custom exercise</span><${Ico} d=${UI.plus} size=${16}/></button>
   </div>`;
 }
 
@@ -688,7 +731,7 @@ function CustomExercise({ env, id }){
   };
   const used = id && store.list('workouts/').some(w => w.exercises.some(e => e.ex === id));
   return html`<div class="stack">
-    <${Bar} title=${id ? 'Edit exercise' : 'Custom exercise'} back=${() => id ? env.go({ type: 'ex', id }) : env.go({ type: 'library' })}/>
+    <${Bar} title=${id ? 'Edit exercise' : 'Custom exercise'} back=${() => id ? env.go({ type: 'ex', id }) : env.home()}/>
     <section class="card">
       <div class="field"><label class="label" for="cx-name">Name</label><input id="cx-name" class="input inset" value=${x.n} onInput=${e => set({ n: e.target.value })}/></div>
       <div class="field"><label class="label" for="cx-desc">How to do it</label><textarea id="cx-desc" class="input inset area" rows="3" value=${x.desc} onInput=${e => set({ desc: e.target.value })}></textarea></div>
@@ -710,7 +753,7 @@ function CustomExercise({ env, id }){
     <button class="btn btn-pop" onClick=${save}>Save exercise</button>
     ${id && html`<button class="btn btn-danger" onClick=${() => app.setSheet({ kind: 'confirm', title: 'Delete ' + old.n + '?', ok: 'Delete', danger: true,
       text: used ? 'It stays in past workouts by name, but you can’t add it again.' : 'It’s not used in any workout.',
-      run: () => { store.del('exercises/' + id); env.go({ type: 'library' }); } })}>Delete exercise</button>`}
+      run: () => { store.del('exercises/' + id); env.home(); } })}>Delete exercise</button>`}
   </div>`;
 }
 

@@ -530,3 +530,13 @@ body.noscroll{overflow:hidden}
 .rcard{display:flex; flex-direction:column; gap:8px; padding:14px 14px 14px 16px; border-radius:16px; background:var(--card); box-shadow:inset 0 0 0 1px var(--line)}
 .rcard-t{border:0; background:none; padding:0; text-align:left; font-size:19px; font-weight:900; color:var(--fg); min-height:36px}
 .rcard-ex{margin:0; color:var(--muted); font-weight:700; font-size:15px; line-height:1.4; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden}
+.icon-btn.sq{background:var(--card); border-radius:12px}
+.row-actions{display:flex; gap:8px}
+.cal-nav{background:transparent; padding:0}
+.cal{display:grid; grid-template-columns:repeat(7, minmax(0, 1fr)); gap:4px; text-align:center}
+.cal-h{font-size:12px; font-weight:900; color:var(--muted); padding:2px 0}
+.cal-d{aspect-ratio:1; max-width:100%; border:0; border-radius:50%; background:transparent; font-weight:800; font-size:14px; color:var(--muted); font-variant-numeric:tabular-nums}
+.cal-d:disabled{opacity:1; cursor:default}
+.cal-d.today{box-shadow:inset 0 0 0 2px var(--line); color:var(--fg)}
+.cal-d.on{background:var(--pop); color:var(--on-pop)}
+.cal-d.sel{box-shadow:0 0 0 3px var(--accent)}
