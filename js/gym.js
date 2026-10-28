@@ -88,13 +88,17 @@ export function GymTab({ app, ui, setUi }){
   return html`<${GymHome} env=${env} active=${active}/>`;
 }
 
+/* Routine items: { ex, rest, sets: [{ t, kg, reps }] } with kg/reps as the target (may be empty).
+   Older routines stored counts ({ warm, sets: 3 }); they're converted when read. */
+export function normRoutine(r){
+  return Object.assign({}, r, { items: (r.items || []).map(it => Array.isArray(it.sets) ? it : { ex: it.ex, rest: it.rest,
+    sets: Array.from({ length: it.warm || 0 }, () => ({ t: 'w', kg: '', reps: '' })).concat(Array.from({ length: it.sets || 1 }, () => ({ t: 'n', kg: '', reps: '' }))) }) });
+}
 export function startWorkout(app, routine){
   const now = Date.now();
-  const exercises = routine ? routine.items.map(it => {
+  const exercises = routine ? normRoutine(routine).items.map(it => {
     const note = store.get('exnotes/' + it.ex) || {};
-    const sets = [];
-    for (let i = 0; i < (it.warm || 0); i++) sets.push(newSet('w'));
-    for (let i = 0; i < (it.sets || 1); i++) sets.push(newSet('n'));
+    const sets = it.sets.map(t => Object.assign(newSet(t.t), { tk: t.kg != null ? String(t.kg) : '', tr: t.reps != null ? String(t.reps) : '' }));
     return { id: uid(), ex: it.ex, rest: it.rest != null ? it.rest : note.rest != null ? note.rest : 90, sets };
   }) : [];
   store.set('gym/active', { id: uid(), name: routine ? routine.name : defaultName(now), routineId: routine ? routine.id : null, start: now, exercises, restEnd: 0 });
@@ -121,7 +125,7 @@ function GymHome({ env, active }){
   const max = ranked.length ? sets[ranked[0]] : 1;
   const big = ['chest', 'shoulders', 'lats', 'quadriceps', 'hamstrings', 'glutes', 'biceps', 'triceps'];
   const missing = big.filter(m => !sets[m]).map(m => MUSCLE_NAMES[m]);
-  const routines = store.list('routines/').sort((a, b) => a.name.localeCompare(b.name));
+  const routines = store.list('routines/').map(normRoutine).sort((a, b) => a.name.localeCompare(b.name));
   const [preview, setPreview] = useState(null);
   const start = r => {
     if (store.get('gym/active')){ env.app.showToast('Finish or discard the workout in progress first.'); env.go({ type: 'workout' }); return; }
@@ -162,11 +166,12 @@ function GymHome({ env, active }){
       ${all.length === 0 && html`<section class="card"><p class="hint">Your workouts show up here. Tap “Start workout”, add exercises and log your sets.</p></section>`}
     </section>
     ${preview && html`<${Sheet} title=${preview.name} close=${() => setPreview(null)}>
-      <div class="list">${preview.items.map((it, i) => html`<div key=${i} class="prev-row"><span class="grow">${exById(it.ex).n}</span><span class="cat-sub">${(it.warm ? it.warm + 'W + ' : '') + it.sets} sets</span></div>`)}</div>
+      <div class="list">${preview.items.map((it, i) => html`<div key=${i} class="prev-row"><span class="grow">${exById(it.ex).n}</span><span class="cat-sub">${setCount(it)}</span></div>`)}</div>
       <div class="btn-row two"><button class="btn btn-ghost" onClick=${() => { setPreview(null); env.go({ type: 'routine', id: preview.id }); }}>Edit</button><button class="btn btn-pop" onClick=${() => { setPreview(null); start(preview); }}>Start</button></div>
     <//>`}
   </div>`;
 }
+const setCount = it => { const w = it.sets.filter(x => x.t === 'w').length, n = it.sets.length - w; return (w ? w + ' warm-up + ' : '') + plural(n, 'set', 'sets'); };
 const relDay = (d, today) => d === today ? 'Today' : d === shiftDay(today, -1) ? 'Yesterday' : fmtShort(d);
 
 function Sheet({ title, close, children, tall }){
@@ -242,8 +247,8 @@ function WorkoutView({ env, w }){
     updEx(e.id, (ex, cur) => {
       const st = ex.sets.find(x => x.id === s.id);
       if (st.done){ st.done = false; return; }
-      if (st.kg === '' && prev && prev.kg) st.kg = r1(prev.kg);
-      if (st.reps === '' && prev && prev.reps) st.reps = String(prev.reps);
+      if (st.kg === '') st.kg = st.tk || (prev && prev.kg ? r1(prev.kg) : '');
+      if (st.reps === '') st.reps = st.tr || (prev && prev.reps ? String(prev.reps) : '');
       if (num(st.reps) == null || num(st.reps) === 0){ app.showToast('Enter the reps first.'); return; }
       st.done = true;
       if (ex.rest > 0) cur.restEnd = Date.now() + ex.rest * 1000;
@@ -264,7 +269,9 @@ function WorkoutView({ env, w }){
       <button class="btn btn-pop sm" onClick=${() => app.setSheet({ kind: 'confirm', title: 'Finish workout?', ok: 'Finish', run: finish,
         text: open ? plural(open, 'set isn’t', 'sets aren’t') + ' ticked off and won’t be saved.' : 'Saves it to your history and checks for new records.' })}>Finish</button>
     </div>
-    ${w.exercises.map((e, i) => html`<${ExerciseBlock} key=${e.id} env=${env} w=${w} e=${e} idx=${i} updEx=${updEx} tick=${tick} setSheet=${setSheet}/>`)}
+    ${sheet && sheet.kind === 'reorder'
+      ? html`<${ReorderList} names=${w.exercises.map(e => exById(e.ex).n)} onDone=${order => { upd(c => { c.exercises = order.map(i => c.exercises[i]); }); setSheet(null); }}/>`
+      : w.exercises.map((e, i) => html`<${ExerciseBlock} key=${e.id} env=${env} start=${w.start} e=${e} idx=${i} updEx=${updEx} tick=${tick} setSheet=${setSheet}/>`)}
     ${w.exercises.length === 0 && html`<section class="card"><p class="hint">Add your first exercise. Your numbers from last time show up next to each set.</p></section>`}
     <button class="btn btn-solid" onClick=${() => setSheet({ kind: 'pick' })}>+ Add exercises</button>
     <button class="btn btn-danger" onClick=${() => app.setSheet({ kind: 'confirm', title: 'Discard workout?', ok: 'Discard', danger: true, text: 'Everything logged in this workout is thrown away.', run: () => { store.del('gym/active'); env.home(); } })}>Discard workout</button>
@@ -280,30 +287,23 @@ function WorkoutView({ env, w }){
         const n = Math.max(1, last.filter(working).length || 3), wn = last.filter(s => s.t === 'w').length;
         c.exercises.push({ id: uid(), ex: id, rest: note.rest != null ? note.rest : 90, sets: Array.from({ length: wn }, () => newSet('w')).concat(Array.from({ length: n }, () => newSet('n'))) }); }); });
     }}/>`}
-    ${sheet && sheet.kind === 'type' && html`<${Sheet} title=${'Set ' + sheet.label} close=${() => setSheet(null)}>
-      <div class="list">${TYPES.map(([t, name, l]) => html`<button key=${t} class="act-pick" aria-pressed=${String(sheet.set.t === t)} onClick=${() => { updEx(sheet.eid, ex => { ex.sets.find(x => x.id === sheet.set.id).t = t; }); setSheet(null); }}>
-        <span class=${'stype t-' + t}>${l || '1'}</span><span class="grow row-title">${name}</span></button>`)}</div>
-      <button class="btn btn-danger" onClick=${() => { updEx(sheet.eid, ex => { ex.sets = ex.sets.filter(x => x.id !== sheet.set.id); }); setSheet(null); }}>Remove set</button>
-    <//>`}
-    ${sheet && sheet.kind === 'exmenu' && html`<${Sheet} title=${exById(sheet.e.ex).n} close=${() => setSheet(null)}>
-      <button class="row-btn" onClick=${() => { setSheet(null); env.go({ type: 'ex', id: sheet.e.ex, back: { type: 'workout' } }); }}>Records, history and how-to</button>
-      <button class="row-btn" disabled=${sheet.idx === 0} onClick=${() => { upd(c => { const a = c.exercises, i = sheet.idx; [a[i - 1], a[i]] = [a[i], a[i - 1]]; }); setSheet(null); }}>Move up</button>
-      <button class="row-btn" disabled=${sheet.idx === w.exercises.length - 1} onClick=${() => { upd(c => { const a = c.exercises, i = sheet.idx; [a[i + 1], a[i]] = [a[i], a[i + 1]]; }); setSheet(null); }}>Move down</button>
-      <button class="btn btn-danger" onClick=${() => { upd(c => { c.exercises = c.exercises.filter(x => x.id !== sheet.e.id); }); setSheet(null); }}>Remove exercise</button>
-    <//>`}
+    <${BlockSheets} env=${env} sheet=${sheet} setSheet=${setSheet} updEx=${updEx} remove=${eid => upd(c => { c.exercises = c.exercises.filter(x => x.id !== eid); })} back=${{ type: 'workout' }}/>
   </div>`;
 }
 
-function ExerciseBlock({ env, w, e, idx, updEx, tick, setSheet }){
+/* One exercise as a set table. In a workout: SET · PREVIOUS · KG · REPS · RPE · ✓. In a routine: SET · PREVIOUS · KG · REPS,
+   where kg and reps are the targets that show up greyed out when the routine is started. */
+function ExerciseBlock({ env, start, e, idx, updEx, tick, setSheet, routine }){
   const ex = exById(e.ex);
-  const prev = lastFor(e.ex, w.start);
+  const prev = lastFor(e.ex, routine ? Infinity : start);
   const noteDoc = store.get('exnotes/' + e.ex) || {};
   const [note, setNote] = useState(noteDoc.note || '');
   let n = 0;
   const saveNote = () => { if ((noteDoc.note || '') !== note) store.set('exnotes/' + e.ex, Object.assign({}, noteDoc, { note })); };
   return html`<section class="card exblock">
-    <div class="row-between">
-      <button class="exname" onClick=${() => env.go({ type: 'ex', id: e.ex, back: { type: 'workout' } })}>${ex.n}</button>
+    <div class="exhead">
+      <button class="grip" aria-label="Reorder exercises" onClick=${() => setSheet({ kind: 'reorder' })}><${Ico} d=${UI.grip} size=${20}/></button>
+      ${routine ? html`<span class="exname static grow">${ex.n}</span>` : html`<button class="exname grow" onClick=${() => env.go({ type: 'ex', id: e.ex, back: { type: 'workout' } })}>${ex.n}</button>`}
       <button class="icon-btn" aria-label=${'Options for ' + ex.n} onClick=${() => setSheet({ kind: 'exmenu', e, idx })}><${Ico} d=${UI.dots} size=${20}/></button>
     </div>
     <textarea class="exnote" rows="1" placeholder="Add a note for this exercise" value=${note} onInput=${ev => { setNote(ev.target.value); ev.target.style.height = 'auto'; ev.target.style.height = ev.target.scrollHeight + 'px'; }} onBlur=${saveNote}></textarea>
@@ -311,23 +311,66 @@ function ExerciseBlock({ env, w, e, idx, updEx, tick, setSheet }){
       <select value=${e.rest} onChange=${ev => { const r = Number(ev.target.value); updEx(e.id, x => { x.rest = r; }); store.set('exnotes/' + e.ex, Object.assign({}, store.get('exnotes/' + e.ex) || {}, { rest: r })); }}>
         ${RESTS.map(r => html`<option key=${r} value=${r}>${r ? clock(r) : 'Off'}</option>`)}
       </select></label>
-    <div class="settable" role="table">
-      <div class="srow shead" role="row"><span>Set</span><span>Previous</span><span>kg</span><span>Reps</span><span>RPE</span><span aria-label="Done"><${Ico} d=${UI.check} size=${14} sw=${3}/></span></div>
+    <div class=${'settable' + (routine ? ' routine' : '')} role="table">
+      <div class="srow shead" role="row"><span>Set</span><span>Previous</span><span>kg</span><span>Reps</span>${!routine && html`<span>RPE</span><span aria-label="Done"><${Ico} d=${UI.check} size=${14} sw=${3}/></span>`}</div>
       ${e.sets.map((s, i) => {
         const label = s.t === 'w' ? 'W' : String(++n) + (s.t === 'f' ? 'F' : s.t === 'd' ? 'D' : '');
         const p = prev[i];
         const set = (k, v) => updEx(e.id, x => { x.sets.find(y => y.id === s.id)[k] = v; });
+        const phK = s.tk || (p ? r1(p.kg || 0) : '0'), phR = s.tr || (p ? String(p.reps) : '0');
         return html`<div key=${s.id} class=${'srow' + (s.done ? ' done' : '')} role="row">
           <button class=${'stype t-' + s.t} aria-label=${'Set ' + label + ', change type'} onClick=${() => setSheet({ kind: 'type', eid: e.id, set: s, label })}>${label}</button>
           <button class="sprev" aria-label="Use previous" onClick=${() => p && updEx(e.id, x => { const y = x.sets.find(z => z.id === s.id); y.kg = r1(p.kg || 0); y.reps = String(p.reps || ''); })}>${p ? r1(p.kg || 0) + ' × ' + p.reps : '–'}</button>
-          <input class="sin" inputmode="decimal" aria-label="kg" placeholder=${p ? r1(p.kg || 0) : '0'} value=${s.kg} onInput=${ev => set('kg', ev.target.value)} onFocus=${ev => ev.target.select()}/>
-          <input class="sin" inputmode="numeric" aria-label="Reps" placeholder=${p ? String(p.reps) : '0'} value=${s.reps} onInput=${ev => set('reps', ev.target.value)} onFocus=${ev => ev.target.select()}/>
-          <select class="sin rpe" aria-label="RPE" value=${s.rpe} onChange=${ev => set('rpe', ev.target.value)}>${RPES.map(r => html`<option key=${r} value=${r}>${r || '–'}</option>`)}</select>
-          <button class=${'sdone' + (s.done ? ' on' : '')} aria-pressed=${String(s.done)} aria-label=${s.done ? 'Undo set' : 'Complete set'} onClick=${() => tick(e, s, p)}><${Ico} d=${UI.check} size=${16} sw=${3.2}/></button>
+          <input class="sin" inputmode="decimal" aria-label="kg" placeholder=${phK} value=${s.kg} onInput=${ev => set('kg', ev.target.value)} onFocus=${ev => ev.target.select()}/>
+          <input class="sin" inputmode="numeric" aria-label="Reps" placeholder=${phR} value=${s.reps} onInput=${ev => set('reps', ev.target.value)} onFocus=${ev => ev.target.select()}/>
+          ${!routine && html`<select class="sin rpe" aria-label="RPE" value=${s.rpe} onChange=${ev => set('rpe', ev.target.value)}>${RPES.map(r => html`<option key=${r} value=${r}>${r || '–'}</option>`)}</select>
+          <button class=${'sdone' + (s.done ? ' on' : '')} aria-pressed=${String(s.done)} aria-label=${s.done ? 'Undo set' : 'Complete set'} onClick=${() => tick(e, s, p)}><${Ico} d=${UI.check} size=${16} sw=${3.2}/></button>`}
         </div>`;
       })}
     </div>
-    <button class="add-set" onClick=${() => updEx(e.id, x => { const last = x.sets[x.sets.length - 1]; const ns = newSet(last && last.t !== 'w' ? last.t : 'n'); if (last){ ns.kg = last.kg; } x.sets.push(ns); })}>+ Add set</button>
+    <button class="add-set" onClick=${() => updEx(e.id, x => { const last = x.sets[x.sets.length - 1]; const ns = newSet(last && last.t !== 'w' ? last.t : 'n'); if (last){ ns.kg = last.kg; ns.tk = last.tk || ''; ns.tr = last.tr || ''; } x.sets.push(ns); })}>+ Add set</button>
+  </section>`;
+}
+
+/* Set type and exercise menus, shared by workouts and routines */
+function BlockSheets({ env, sheet, setSheet, updEx, remove, back }){
+  if (!sheet) return null;
+  if (sheet.kind === 'type') return html`<${Sheet} title=${'Set ' + sheet.label} close=${() => setSheet(null)}>
+    <div class="list">${TYPES.map(([t, name, l]) => html`<button key=${t} class="act-pick" aria-pressed=${String(sheet.set.t === t)} onClick=${() => { updEx(sheet.eid, ex => { ex.sets.find(x => x.id === sheet.set.id).t = t; }); setSheet(null); }}>
+      <span class=${'stype t-' + t}>${l || '1'}</span><span class="grow row-title">${name}</span></button>`)}</div>
+    <button class="btn btn-danger" onClick=${() => { updEx(sheet.eid, ex => { ex.sets = ex.sets.filter(x => x.id !== sheet.set.id); }); setSheet(null); }}>Remove set</button>
+  <//>`;
+  if (sheet.kind === 'exmenu') return html`<${Sheet} title=${exById(sheet.e.ex).n} close=${() => setSheet(null)}>
+    <button class="row-btn" onClick=${() => setSheet({ kind: 'reorder' })}><span class="grow">Reorder exercises</span><${Ico} d=${UI.grip} size=${18}/></button>
+    ${back && html`<button class="row-btn" onClick=${() => { setSheet(null); env.go({ type: 'ex', id: sheet.e.ex, back }); }}>Records, history and how-to</button>`}
+    <button class="btn btn-danger" onClick=${() => { remove(sheet.e.id); setSheet(null); }}>Remove exercise</button>
+  <//>`;
+  return null;
+}
+
+/* Drag the handles to reorder. onDone gets the new order as indexes into the original list. */
+const ROW = 60;
+function ReorderList({ names, onDone }){
+  const [order, setOrder] = useState(() => names.map((_, i) => i));
+  const [drag, setDrag] = useState(null);
+  const n = order.length;
+  const target = drag ? Math.max(0, Math.min(n - 1, drag.pos + Math.round(drag.dy / ROW))) : -1;
+  const down = (pos, e) => { e.preventDefault(); try { e.currentTarget.setPointerCapture(e.pointerId); } catch (er){} setDrag({ pos, y0: e.clientY, dy: 0 }); };
+  const move = e => { if (drag) setDrag(Object.assign({}, drag, { dy: e.clientY - drag.y0 })); };
+  const up = () => { if (!drag) return; const o = order.slice(), [x] = o.splice(drag.pos, 1); o.splice(target, 0, x); setOrder(o); setDrag(null); };
+  return html`<section class="card reorder">
+    <div class="row-between"><h2 class="card-title">Reorder exercises</h2><button class="btn btn-pop sm" onClick=${() => onDone(order)}>Done</button></div>
+    <p class="hint">Hold the handle and drag an exercise up or down.</p>
+    <div class="rlist" style=${'height:' + n * ROW + 'px'}>
+      ${order.map((orig, pos) => {
+        let y = pos * ROW;
+        if (drag){ if (pos === drag.pos) y += drag.dy; else if (drag.pos < pos && pos <= target) y -= ROW; else if (target <= pos && pos < drag.pos) y += ROW; }
+        return html`<div key=${orig} class=${'rrow' + (drag && pos === drag.pos ? ' lifted' : '')} style=${'transform:translateY(' + y + 'px)'}>
+          <span class="grow row-title">${names[orig]}</span>
+          <span class="rhandle" aria-label=${'Drag ' + names[orig]} onPointerDown=${e => down(pos, e)} onPointerMove=${move} onPointerUp=${up} onPointerCancel=${up}><${Ico} d=${UI.grip} size=${22}/></span>
+        </div>`;
+      })}
+    </div>
   </section>`;
 }
 
@@ -415,7 +458,7 @@ function WorkoutDetail({ env, id, justDone }){
   if (!w) return html`<div class="stack"><${Bar} title="Workout" back=${env.home}/><p class="hint">This workout was deleted.</p></div>`;
   const del = () => app.setSheet({ kind: 'confirm', title: 'Delete workout?', ok: 'Delete', danger: true, text: 'Removes it from your history and records.',
     run: () => { store.del('workouts/' + id); env.home(); app.showToast('Workout deleted.', { label: 'Undo', run: () => store.set('workouts/' + id, w) }); } });
-  const asRoutine = () => { env.go({ type: 'routine', id: null, seed: { name: w.name, items: w.exercises.map(e => ({ ex: e.ex, warm: e.sets.filter(s => s.t === 'w').length, sets: Math.max(1, e.sets.filter(working).length), rest: (store.get('exnotes/' + e.ex) || {}).rest || 90 })) } }); };
+  const asRoutine = () => { env.go({ type: 'routine', id: null, seed: { name: w.name, items: w.exercises.map(e => ({ ex: e.ex, rest: (store.get('exnotes/' + e.ex) || {}).rest || 90, sets: e.sets.map(x => ({ t: x.t, kg: x.kg, reps: x.reps })) })) } }); };
   return html`<div class="stack">
     <${Bar} title=${justDone ? 'Workout saved' : fmtShort(w.date)} back=${env.home}/>
     <section class="card">
@@ -600,48 +643,40 @@ function CustomExercise({ env, id }){
 }
 
 /* ---------- Routines ---------- */
+const toBlock = it => ({ id: uid(), ex: it.ex, rest: it.rest != null ? it.rest : 90, sets: it.sets.map(x => Object.assign(newSet(x.t), { kg: x.kg != null ? String(x.kg) : '', reps: x.reps != null ? String(x.reps) : '' })) });
 function RoutineEditor({ env, id, seed }){
   const { app } = env;
   const old = id ? store.get('routines/' + id) : null;
-  const [r, setR] = useState(() => old ? clone(old) : Object.assign({ name: '', items: [] }, clone(seed || {})));
-  const [pick, setPick] = useState(false);
+  const [r, setR] = useState(() => { const src = normRoutine(old ? clone(old) : Object.assign({ name: '', items: [] }, clone(seed || {}))); return { name: src.name || '', items: src.items.map(toBlock) }; });
+  const [sheet, setSheet] = useState(null);
   const [err, setErr] = useState('');
   const set = patch => { setR(prev => Object.assign({}, prev, typeof patch === 'function' ? patch(prev) : patch)); setErr(''); };
-  const updItem = (i, patch) => set(prev => ({ items: prev.items.map((it, j) => j === i ? Object.assign({}, it, patch) : it) }));
+  const updEx = (eid, fn) => set(prev => ({ items: prev.items.map(it => { if (it.id !== eid) return it; const c = clone(it); fn(c); return c; }) }));
   const save = () => {
-    if (!r.name.trim()){ setErr('Give the routine a name.'); return; }
+    if (!r.name.trim()){ setErr('Give the routine a name.'); scrollTop(); return; }
     if (!r.items.length){ setErr('Add at least one exercise.'); return; }
+    if (r.items.some(it => !it.sets.length)){ setErr('Every exercise needs at least one set.'); return; }
     const rid = id || uid();
-    store.set('routines/' + rid, { id: rid, name: r.name.trim(), items: r.items });
+    store.set('routines/' + rid, { id: rid, name: r.name.trim(), items: r.items.map(it => ({ ex: it.ex, rest: it.rest, sets: it.sets.map(x => ({ t: x.t, kg: num(x.kg) != null ? num(x.kg) : '', reps: num(x.reps) != null ? num(x.reps) : '' })) })) });
     app.showToast('Routine saved.'); env.home();
   };
   return html`<div class="stack">
     <div class="topbar"><button class="link" onClick=${env.home}><${Ico} d=${UI.back} size=${18} sw=${2.6}/>Cancel</button><h1>${id ? 'Edit routine' : 'New routine'}</h1><button class="link" onClick=${save}>Save</button></div>
     <input class="input meal-name" aria-label="Routine name" placeholder="Routine name, like “Push day”" value=${r.name} onInput=${e => set({ name: e.target.value })}/>
-    ${r.items.map((it, i) => html`<section key=${i} class="card">
-      <div class="row-between"><span class="exname static">${exById(it.ex).n}</span>
-        <span class="row-actions">
-          <button class="icon-btn" aria-label="Move up" disabled=${i === 0} onClick=${() => set(prev => { const a = prev.items.slice(); [a[i - 1], a[i]] = [a[i], a[i - 1]]; return { items: a }; })}><${Ico} d=${UI.up} size=${18}/></button>
-          <button class="icon-btn danger" aria-label="Remove" onClick=${() => set(prev => ({ items: prev.items.filter((_, j) => j !== i) }))}><${Ico} d=${UI.x} size=${18}/></button>
-        </span></div>
-      <div class="rsteps">
-        <${Stepper} label="Warm-up sets" value=${it.warm || 0} min=${0} onChange=${v => updItem(i, { warm: v })}/>
-        <${Stepper} label="Working sets" value=${it.sets || 1} min=${1} onChange=${v => updItem(i, { sets: v })}/>
-        <label class="restsel"><${Ico} d=${UI.timer} size=${15}/>Rest<select value=${it.rest != null ? it.rest : 90} onChange=${e => updItem(i, { rest: Number(e.target.value) })}>${RESTS.map(x => html`<option key=${x} value=${x}>${x ? clock(x) : 'Off'}</option>`)}</select></label>
-      </div>
-    </section>`)}
-    ${r.items.length === 0 && html`<section class="card"><p class="hint">Add the exercises for this routine. When you start it, your numbers from last time show up next to each set.</p></section>`}
     ${err && html`<p class="status bad">${err}</p>`}
-    <button class="btn btn-solid" onClick=${() => setPick(true)}>+ Add exercises</button>
+    ${sheet && sheet.kind === 'reorder'
+      ? html`<${ReorderList} names=${r.items.map(it => exById(it.ex).n)} onDone=${order => { set(prev => ({ items: order.map(i => prev.items[i]) })); setSheet(null); }}/>`
+      : r.items.map((e, i) => html`<${ExerciseBlock} key=${e.id} env=${env} e=${e} idx=${i} updEx=${updEx} setSheet=${setSheet} routine=${true}/>`)}
+    ${r.items.length === 0 && html`<section class="card"><p class="hint">Add the exercises for this routine. Set the number of sets, and optionally the kg and reps to aim for. When you start it, your numbers from last time show up next to each set.</p></section>`}
+    <button class="btn btn-solid" onClick=${() => setSheet({ kind: 'pick' })}>+ Add exercises</button>
     <button class="btn btn-pop" onClick=${save}>Save routine</button>
     ${id && html`<button class="btn btn-danger" onClick=${() => app.setSheet({ kind: 'confirm', title: 'Delete ' + old.name + '?', ok: 'Delete', danger: true, text: 'Past workouts stay in your history.', run: () => { store.del('routines/' + id); env.home(); } })}>Delete routine</button>`}
-    ${pick && html`<${PickerSheet} env=${env} close=${() => setPick(false)} onPick=${ids => { setPick(false); set(prev => ({ items: prev.items.concat(ids.map(x => ({ ex: x, warm: 0, sets: 3, rest: (store.get('exnotes/' + x) || {}).rest || 90 }))) })); }}/>`}
+    ${sheet && sheet.kind === 'pick' && html`<${PickerSheet} env=${env} close=${() => setSheet(null)} onPick=${ids => { setSheet(null);
+      set(prev => ({ items: prev.items.concat(ids.map(x => { const last = lastFor(x, Infinity);
+        const sets = last.length ? last.map(z => ({ t: z.t, kg: '', reps: '' })) : [1, 2, 3].map(() => ({ t: 'n', kg: '', reps: '' }));
+        return toBlock({ ex: x, rest: (store.get('exnotes/' + x) || {}).rest, sets }); })) })); }}/>`}
+    <${BlockSheets} env=${env} sheet=${sheet} setSheet=${setSheet} updEx=${updEx} remove=${eid => set(prev => ({ items: prev.items.filter(it => it.id !== eid) }))}/>
   </div>`;
-}
-function Stepper({ label, value, min, onChange }){
-  return html`<div class="mini-step"><span class="cat-sub">${label}</span><div class="ms">
-    <button aria-label=${'Fewer ' + label.toLowerCase()} disabled=${value <= min} onClick=${() => onChange(value - 1)}>−</button><b>${value}</b>
-    <button aria-label=${'More ' + label.toLowerCase()} onClick=${() => onChange(value + 1)}>+</button></div></div>`;
 }
 
 /* Bar shown on other tabs while a workout is running */

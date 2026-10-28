@@ -5,6 +5,9 @@ const root = document.getElementById('app');
 root.textContent = '';
 render(html`<${App}/>`, root);
 
+/* iPhone ignores "no zoom" in the page settings, so block pinch-zoom gestures directly */
+['gesturestart', 'gesturechange'].forEach(t => document.addEventListener(t, e => e.preventDefault(), { passive: false }));
+
 /* Offline support + home-screen app (skipped on the local test server) */
 if ('serviceWorker' in navigator && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1'){
   navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => {});

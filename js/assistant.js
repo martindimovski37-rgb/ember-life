@@ -5,7 +5,7 @@ import { html, useState, useEffect, useRef, Ico, UI, uid, dayKey, fmtShort, plur
 import { store } from './store.js';
 import { claude, aiModel, fallbackParams, aiError } from './claude.js';
 import { foodMap, mealTotals, entryMacros, addUp, getTargets, targetsFor, goalFor, maintenance, latestWeight, dayTotals, usdaSearch, MEAL_TAGS, kc, g1 } from './diet.js';
-import { loadLib, allExercises, rank, exById, workoutsList, workedOutOn } from './gym.js';
+import { loadLib, allExercises, rank, exById, workoutsList, workedOutOn, normRoutine } from './gym.js';
 
 const CHAT_KEY = 'ember-life-chat';
 const MAX_STEPS = 10;
@@ -117,7 +117,7 @@ export async function runTool(name, input){
   if (name === 'list_routines'){
     await loadLib();
     const r = store.list('routines/');
-    return r.length ? r.map(x => ({ name: x.name, exercises: x.items.map(it => exById(it.ex).n + ' ' + (it.warm ? it.warm + ' warm-up + ' : '') + it.sets + ' sets') })) : 'No routines yet.';
+    return r.length ? r.map(normRoutine).map(x => ({ name: x.name, exercises: x.items.map(it => exById(it.ex).n + ': ' + it.sets.map(z => (z.t === 'w' ? 'warm-up ' : '') + (z.kg !== '' ? z.kg + ' kg' : '') + (z.reps !== '' ? ' x ' + z.reps : '')).join(', ')) })) : 'No routines yet.';
   }
   if (name.startsWith('propose_')){ if (name === 'propose_routine') await loadLib(); return checkProposal(name, input); }
   return { error: 'Unknown tool' };
@@ -178,7 +178,7 @@ function confirmCard(name, x){
   }
   if (name === 'propose_routine'){
     const id = uid();
-    store.set('routines/' + id, { id, name: x.name.trim(), items: x.exercises.map(e => ({ ex: e.exercise_id, warm: Math.max(0, e.warmup_sets || 0), sets: Math.max(1, e.working_sets || 3), rest: isNum(e.rest_seconds) ? e.rest_seconds : 90 })) });
+    store.set('routines/' + id, normRoutine({ id, name: x.name.trim(), items: x.exercises.map(e => ({ ex: e.exercise_id, warm: Math.max(0, e.warmup_sets || 0), sets: Math.max(1, e.working_sets || 3), rest: isNum(e.rest_seconds) ? e.rest_seconds : 90 })) }));
     return x.name + ' saved to your routines.';
   }
 }

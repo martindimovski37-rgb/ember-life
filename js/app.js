@@ -7,7 +7,7 @@ import { GymTab, WorkoutBar, workedOutOn, SOUNDS, playSound } from './gym.js';
 import { AssistantButton, AssistantChat } from './assistant.js';
 import { AI_MODELS, aiModel, claude, aiError } from './claude.js';
 
-export const VERSION = '1.10';
+export const VERSION = '1.11';
 const TABS = [['today', 'Today', UI.sun], ['planner', 'Planner', UI.grid], ['diet', 'Diet', UI.diet], ['gym', 'Gym', UI.gym]];
 const ALL_TABS = TABS.map(t => t[0]).concat(['settings']);
 
