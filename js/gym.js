@@ -183,17 +183,42 @@ const RESTS = [0, 30, 45, 60, 75, 90, 120, 150, 180, 240, 300];
 const TYPES = [['w', 'Warm-up', 'W'], ['n', 'Normal', ''], ['f', 'Failure', 'F'], ['d', 'Drop set', 'D']];
 const RPES = ['', '6', '6.5', '7', '7.5', '8', '8.5', '9', '9.5', '10'];
 
-function beep(){
-  try { navigator.vibrate && navigator.vibrate([200, 100, 200]); } catch (e){}
+/* Rest timer sounds, made on the fly so nothing needs downloading. They play through headphones when connected,
+   otherwise the iPhone speaker. 'transient' tells iOS it's a short alert that briefly lowers music, not silenced by the mute switch. */
+export const SOUNDS = [['chime', 'Chime'], ['beep', 'Beep'], ['bell', 'Bell'], ['whistle', 'Whistle'], ['ding', 'Triple ding'], ['boxing', 'Boxing bell'], ['off', 'Off']];
+function audio(){
+  const A = window.AudioContext || window.webkitAudioContext; if (!A) return null;
+  try { if (navigator.audioSession) navigator.audioSession.type = 'transient'; } catch (e){}
+  const ctx = audio.ctx || (audio.ctx = new A());
+  if (ctx.state === 'suspended') ctx.resume();
+  return ctx;
+}
+function tone(ctx, at, freq, len, { type = 'sine', vol = 0.3, to } = {}){
+  const o = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime + at;
+  o.type = type; o.frequency.setValueAtTime(freq, t);
+  if (to) o.frequency.exponentialRampToValueAtTime(to, t + len * 0.8);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+  o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t + len + 0.05);
+}
+export function playSound(kind){
+  if (kind === 'off') return;
+  const ctx = audio(); if (!ctx) return;
   try {
-    const A = window.AudioContext || window.webkitAudioContext; if (!A) return;
-    const ctx = beep.ctx || (beep.ctx = new A());
-    [0, 0.25, 0.5].forEach(t => { const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = 880; g.gain.value = 0.15;
-      o.connect(g); g.connect(ctx.destination); o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.15); });
+    if (kind === 'beep') [0, 0.3, 0.6].forEach(t => tone(ctx, t, 880, 0.18, { type: 'square', vol: 0.12 }));
+    else if (kind === 'bell') [0, 0.9].forEach(t => { tone(ctx, t, 660, 1.4, { vol: 0.35 }); tone(ctx, t, 1650, 0.9, { vol: 0.12 }); tone(ctx, t, 2640, 0.5, { vol: 0.06 }); });
+    else if (kind === 'whistle') [0, 0.55].forEach(t => tone(ctx, t, 1400, 0.4, { vol: 0.25, to: 2600 }));
+    else if (kind === 'ding') [0, 0.32, 0.64].forEach(t => tone(ctx, t, 1568, 0.3, { type: 'triangle', vol: 0.35 }));
+    else if (kind === 'boxing') [0, 0.22, 0.44, 0.66].forEach(t => { tone(ctx, t, 520, 0.5, { vol: 0.3 }); tone(ctx, t, 1310, 0.35, { vol: 0.1 }); });
+    else [[0, 1047], [0.16, 1319], [0.32, 1568], [0.6, 2093]].forEach(([t, f]) => tone(ctx, t, f, 0.7, { vol: 0.28 }));
   } catch (e){}
 }
-/* unlock audio on iPhone: it only plays after a tap */
-const unlockAudio = () => { try { const A = window.AudioContext || window.webkitAudioContext; if (A && !beep.ctx) beep.ctx = new A(); if (beep.ctx && beep.ctx.state === 'suspended') beep.ctx.resume(); } catch (e){} };
+const restSound = () => (store.get('settings/app') || {}).restSound || 'chime';
+function beep(){
+  try { navigator.vibrate && navigator.vibrate([200, 100, 200]); } catch (e){}
+  playSound(restSound());
+}
+/* iPhone only plays sound after a tap, so wake the audio on the first set tick */
+const unlockAudio = () => { audio(); };
 
 function useTick(ms = 1000){
   const [, set] = useState(0);

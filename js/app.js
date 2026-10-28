@@ -3,9 +3,9 @@ import { html, useState, useEffect, useRef, Ico, UI, Ring, dayKey, fmtLong, plur
 import { store, sync, deviceGet, deviceSet } from './store.js';
 import { plannerCtx, PlannerTab, PlanItems, RequiredSheet } from './planner.js';
 import { DietTab, TargetsForm, dayTotals, targetsFor, kc, g1 } from './diet.js';
-import { GymTab, WorkoutBar, workedOutOn } from './gym.js';
+import { GymTab, WorkoutBar, workedOutOn, SOUNDS, playSound } from './gym.js';
 
-export const VERSION = '1.7 · step 4';
+export const VERSION = '1.8 · step 4';
 const TABS = [['today', 'Today', UI.sun], ['planner', 'Planner', UI.grid], ['diet', 'Diet', UI.diet], ['gym', 'Gym', UI.gym]];
 const ALL_TABS = TABS.map(t => t[0]).concat(['settings']);
 
@@ -152,6 +152,13 @@ function SettingsView({ app }){
         ${THEMES.map(t => html`<button key=${t[0]} aria-pressed=${String(settings.theme === t[0])} onClick=${() => setTheme(t[0])}>${t[1]}</button>`)}
       </div>
       <p class="hint">Auto follows your iPhone or Mac.</p>
+    </section>
+    <section class="card">
+      <h2 class="card-title">Rest timer sound</h2>
+      <div class="list">${SOUNDS.map(([k, name]) => { const on = (settings.restSound || 'chime') === k; return html`<button key=${k} class="act-pick" aria-pressed=${String(on)}
+        onClick=${() => { store.set('settings/app', Object.assign({}, settings, { restSound: k })); playSound(k); }}>
+        <span class="grow row-title">${name}</span><span class=${'radio' + (on ? ' on' : '')}></span></button>`; })}</div>
+      <p class="hint">Tap one to hear it. It plays through your headphones when they’re connected, otherwise the iPhone speaker, while Ember Life is open.</p>
     </section>
     <section class="card">
       <h2 class="card-title">Daily targets</h2>
