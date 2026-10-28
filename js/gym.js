@@ -350,6 +350,17 @@ function PickerSheet({ env, close, onPick }){
   if (!ql) list = list.slice().sort((a, b) => (a.id in recent ? recent[a.id] : 999) - (b.id in recent ? recent[b.id] : 999) || (b.custom ? 1 : 0) - (a.custom ? 1 : 0));
   else list = list.slice().sort((a, b) => rank(b, ql) - rank(a, ql) || a.n.length - b.n.length);
   const toggle = id => setSel(sel.includes(id) ? sel.filter(x => x !== id) : sel.concat([id]));
+  const [peek, setPeek] = useState(null);
+  const go = sel.length > 0 && html`<button class="btn btn-pop picker-go" onClick=${() => onPick(sel)}>Add ${plural(sel.length, 'exercise', 'exercises')}</button>`;
+  if (peek){
+    const x = exById(peek), on = sel.includes(peek);
+    return html`<${Sheet} title=${x.n} close=${close} tall=${true}>
+      <button class="link sm-link" onClick=${() => setPeek(null)}><${Ico} d=${UI.back} size=${16} sw=${2.6}/>All exercises</button>
+      <${ExerciseInfo} ex=${x}/>
+      <button class=${'btn ' + (on ? 'btn-ghost' : 'btn-solid')} onClick=${() => { toggle(peek); if (!on) setPeek(null); }}>${on ? 'Selected ✓ · tap to unselect' : 'Select this exercise'}</button>
+      ${go}
+    <//>`;
+  }
   return html`<${Sheet} title="Add exercises" close=${close} tall=${true}>
     <div class="search"><${Ico} d=${UI.search} size=${18}/><input type="search" aria-label="Search exercises" placeholder="Search exercises" value=${q} onInput=${e => { setQ(e.target.value); setLimit(60); }}/></div>
     <div class="filters">
@@ -357,16 +368,18 @@ function PickerSheet({ env, close, onPick }){
       <select aria-label="Equipment" value=${eq} onChange=${e => setEq(e.target.value)}><option value="">All equipment</option>${EQUIP.map(m => html`<option key=${m} value=${m}>${cap(m)}</option>`)}</select>
     </div>
     <div class="list">
-      ${list.slice(0, limit).map(x => { const on = sel.includes(x.id); const th = exThumb(x); return html`<button key=${x.id} class=${'exrow' + (on ? ' on' : '')} aria-pressed=${String(on)} onClick=${() => toggle(x.id)}>
-        <span class="thumb">${th ? html`<img src=${th} alt="" loading="lazy"/>` : html`<${Ico} d=${UI.gym} size=${18}/>`}</span>
-        <span class="col grow"><span class="row-title">${x.n}${x.custom ? html` <span class="pill">custom</span>` : ''}</span><span class="row-sub">${muscleLine(x)}</span></span>
-        ${on && html`<span class="selmark"><${Ico} d=${UI.check} size=${14} sw=${3.4}/></span>`}
-      </button>`; })}
+      ${list.slice(0, limit).map(x => { const on = sel.includes(x.id); const th = exThumb(x); return html`<div key=${x.id} class=${'exrow pick' + (on ? ' on' : '')}>
+        <button class="exrow-main" onClick=${() => setPeek(x.id)}>
+          <span class="thumb">${th ? html`<img src=${th} alt="" loading="lazy"/>` : html`<${Ico} d=${UI.gym} size=${18}/>`}</span>
+          <span class="col grow"><span class="row-title">${x.n}${x.custom ? html` <span class="pill">custom</span>` : ''}</span><span class="row-sub">${muscleLine(x)}</span></span>
+        </button>
+        <button class=${'selbtn' + (on ? ' on' : '')} aria-pressed=${String(on)} aria-label=${(on ? 'Unselect ' : 'Select ') + x.n} onClick=${() => toggle(x.id)}><${Ico} d=${on ? UI.check : UI.plus} size=${16} sw=${3}/></button>
+      </div>`; })}
       ${list.length > limit && html`<button class="btn btn-ghost sm" onClick=${() => setLimit(limit + 100)}>Show more (${list.length - limit})</button>`}
       ${list.length === 0 && html`<p class="hint">Nothing matches. Try another word, or create it as a custom exercise.</p>`}
     </div>
     <button class="row-btn" onClick=${() => { close(); env.go({ type: 'custom', id: null, back: { type: 'workout' } }); }}><span class="grow">Can’t find it? Create a custom exercise</span><${Ico} d=${UI.plus} size=${16}/></button>
-    ${sel.length > 0 && html`<button class="btn btn-pop picker-go" onClick=${() => onPick(sel)}>Add ${plural(sel.length, 'exercise', 'exercises')}</button>`}
+    ${go}
   <//>`;
 }
 
@@ -409,21 +422,13 @@ function ExerciseDetail({ env, id, back }){
   const all = sessions.flatMap(s => s.sets);
   const best = all.reduce((b, s) => ({ kg: Math.max(b.kg, s.kg), orm: Math.max(b.orm, e1rm(s.kg, s.reps)), vol: Math.max(b.vol, s.kg * s.reps), reps: Math.max(b.reps, s.reps) }), { kg: 0, orm: 0, vol: 0, reps: 0 });
   const points = sessions.slice(0, 16).reverse().map(s => ({ d: s.w.date, v: Math.max(...s.sets.map(x => e1rm(x.kg, x.reps))) }));
-  const [howto, setHowto] = useState(false);
   const noteDoc = store.get('exnotes/' + id) || {};
   const [note, setNote] = useState(noteDoc.note || '');
   return html`<div class="stack">
     <${Bar} title="Exercise" back=${goBack} right=${ex.custom ? html`<button class="link" onClick=${() => env.go({ type: 'custom', id })}>Edit</button>` : null}/>
     <section class="card">
       <h2 class="card-title gold">${ex.n}</h2>
-      <p class="hint">${muscleLine(ex)}${ex.e ? ' · ' + cap(ex.e) : ''}</p>
-      ${ex.custom ? (ex.photo && html`<img class="exphoto" src=${ex.photo} alt=${ex.n}/>`)
-        : ex.im > 0 && html`<${Demo} ex=${ex}/>`}
-      ${ex.custom && ex.desc && html`<p class="exdesc">${ex.desc}</p>`}
-      <a class="btn btn-ghost sm video-btn" href=${'https://www.youtube.com/results?search_query=' + encodeURIComponent(ex.n.replace(/\s*\(.*?\)|\s+-\s+/g, ' ') + ' exercise proper form')} target="_blank" rel="noopener"><${Ico} d=${UI.play} size=${16}/>Watch a video</a>
-      ${!ex.custom && ex.in && ex.in.length > 0 && (howto
-        ? html`<ol class="steps">${ex.in.map((t, i) => html`<li key=${i}>${t}</li>`)}</ol>`
-        : html`<button class="link sm-link" onClick=${() => setHowto(true)}>How to do it</button>`)}
+      <${ExerciseInfo} ex=${ex}/>
     </section>
     <section class="card">
       <h2 class="card-title">Records</h2>
@@ -446,6 +451,22 @@ function ExerciseDetail({ env, id, back }){
         <span class="row-sub wrap">${s.sets.map(x => r1(x.kg) + '×' + x.reps).join(' · ')}</span>
       </div>`)}
     </section>`}
+  </div>`;
+}
+
+/* Photo demo, muscles, video link and how-to steps */
+function ExerciseInfo({ ex }){
+  const [howto, setHowto] = useState(false);
+  const last = lastFor(ex.id, Infinity).filter(working);
+  return html`<div class="stack-sm">
+    <p class="hint">${muscleLine(ex)}${ex.e ? ' · ' + cap(ex.e) : ''}</p>
+    ${ex.custom ? (ex.photo && html`<img class="exphoto" src=${ex.photo} alt=${ex.n}/>`) : ex.im > 0 && html`<${Demo} ex=${ex}/>`}
+    ${ex.custom && ex.desc && html`<p class="exdesc">${ex.desc}</p>`}
+    ${last.length > 0 && html`<p class="hint">Last time: ${last.map(x => r1(x.kg) + ' × ' + x.reps).join(', ')}</p>`}
+    <a class="btn btn-ghost sm video-btn" href=${'https://www.youtube.com/results?search_query=' + encodeURIComponent(ex.n.replace(/\s*\(.*?\)|\s+-\s+/g, ' ') + ' exercise proper form')} target="_blank" rel="noopener"><${Ico} d=${UI.play} size=${16}/>Watch a video</a>
+    ${!ex.custom && ex.in && ex.in.length > 0 && (howto
+      ? html`<ol class="steps">${ex.in.map((t, i) => html`<li key=${i}>${t}</li>`)}</ol>`
+      : html`<button class="link sm-link" onClick=${() => setHowto(true)}>How to do it</button>`)}
   </div>`;
 }
 

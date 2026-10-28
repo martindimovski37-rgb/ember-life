@@ -1,11 +1,12 @@
 /* Ember Life offline cache. Network first so updates show up right away; the cache is the fallback
-   when there's no signal (e.g. in the gym). Bump VERSION when files are added. */
-const VERSION = 'ember-life-7';
+   when there's no signal (e.g. in the gym). Own files are always re-checked with the server (GitHub Pages
+   otherwise lets phones reuse a file for 10 minutes). Bump VERSION on every release. */
+const VERSION = 'ember-life-8';
 const SHELL = ['./', 'index.html', 'css/app.css', 'vendor/preact-htm.umd.js', 'js/main.js', 'js/app.js', 'js/lib.js', 'js/store.js', 'js/planner.js', 'js/diet.js', 'js/gym.js', 'js/bodymap.js', 'data/exercises.json', 'vendor/zxing.min.js',
   'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== VERSION && k !== 'ember-life-photos').map(k => caches.delete(k)))).then(() => self.clients.claim()));
@@ -22,7 +23,7 @@ self.addEventListener('fetch', e => {
   }
   if (!own && !font) return;   /* GitHub, USDA, Open Food Facts, Claude: always live */
   e.respondWith(
-    fetch(e.request).then(res => {
+    fetch(own ? e.request.url : e.request, own ? { cache: 'no-cache' } : undefined).then(res => {
       if (res.ok || res.type === 'opaque'){ const copy = res.clone(); caches.open(VERSION).then(c => c.put(e.request, copy)); }
       return res;
     }).catch(() => caches.match(e.request, { ignoreSearch: true }).then(r => r || (e.request.mode === 'navigate' ? caches.match('index.html') : undefined)))

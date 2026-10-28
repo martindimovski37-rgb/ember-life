@@ -5,7 +5,7 @@ import { plannerCtx, PlannerTab, PlanItems, RequiredSheet } from './planner.js';
 import { DietTab, TargetsForm, dayTotals, targetsFor, kc, g1 } from './diet.js';
 import { GymTab, WorkoutBar, workedOutOn } from './gym.js';
 
-export const VERSION = '1.6 · step 4';
+export const VERSION = '1.7 · step 4';
 const TABS = [['today', 'Today', UI.sun], ['planner', 'Planner', UI.grid], ['diet', 'Diet', UI.diet], ['gym', 'Gym', UI.gym]];
 const ALL_TABS = TABS.map(t => t[0]).concat(['settings']);
 
