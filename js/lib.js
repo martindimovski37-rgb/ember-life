@@ -59,6 +59,8 @@ export const UI = {
   barcode: 'M4 7V5a1 1 0 0 1 1-1h2 M17 4h2a1 1 0 0 1 1 1v2 M20 17v2a1 1 0 0 1-1 1h-2 M7 20H5a1 1 0 0 1-1-1v-2 M8 8v8 M11 8v8 M14 8v8 M17 8v8',
   dots: 'M5 12h.01 M12 12h.01 M19 12h.01',
   timer: 'M12 21a8 8 0 1 0 0-16a8 8 0 1 0 0 16 M12 9v4l2 2 M10 2h4',
+  folderPlus: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z M12 10v6 M9 13h6',
+  clipboard: 'M9 4h6v3H9z M9 5H6v15h12V5h-3 M9 11h6 M9 15h4',
   grip: 'M9 6h.01 M15 6h.01 M9 12h.01 M15 12h.01 M9 18h.01 M15 18h.01',
   spark: 'M12 3l1.9 5.6L19.5 10.5l-5.6 1.9L12 18l-1.9-5.6L4.5 10.5l5.6-1.9z M19 3v4 M17 5h4',
   camera: 'M4 8h3l2-3h6l2 3h3v11H4z M12 17a4 4 0 1 0 0-8a4 4 0 1 0 0 8',

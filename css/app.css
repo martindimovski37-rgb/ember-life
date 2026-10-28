@@ -516,3 +516,17 @@ body.noscroll{overflow:hidden}
 @media (prefers-reduced-motion: reduce){ .rrow{transition:none} }
 .blocks{display:flex; flex-direction:column; gap:14px}
 [hidden]{display:none !important}
+
+/* Gym home: Hevy-style start card, routine folders and cards */
+.bigbtn{display:flex; align-items:center; gap:12px; width:100%; min-height:60px; padding:0 18px; border:0; border-radius:16px; background:var(--card); color:var(--fg); font-size:18px; font-weight:900; text-align:left}
+.bigbtn.sm{min-height:54px; font-size:17px}
+.bigbtn.live{background:var(--accent); color:var(--on-accent)}
+.section-t{margin:0; font-size:21px; font-weight:900}
+.folder{display:flex; flex-direction:column; gap:8px; margin-top:4px}
+.folder-head{display:flex; align-items:center; justify-content:space-between}
+.folder-t{border:0; background:none; padding:0; min-height:40px; display:flex; align-items:center; gap:8px; font-size:16px; font-weight:800; color:var(--muted)}
+.tri{display:inline-block; transition:transform .15s ease; font-size:14px}
+.tri.shut{transform:rotate(-90deg)}
+.rcard{display:flex; flex-direction:column; gap:8px; padding:14px 14px 14px 16px; border-radius:16px; background:var(--card); box-shadow:inset 0 0 0 1px var(--line)}
+.rcard-t{border:0; background:none; padding:0; text-align:left; font-size:19px; font-weight:900; color:var(--fg); min-height:36px}
+.rcard-ex{margin:0; color:var(--muted); font-weight:700; font-size:15px; line-height:1.4; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden}

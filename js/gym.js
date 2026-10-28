@@ -126,16 +126,16 @@ function GymHome({ env, active }){
   const big = ['chest', 'shoulders', 'lats', 'quadriceps', 'hamstrings', 'glutes', 'biceps', 'triceps'];
   const missing = big.filter(m => !sets[m]).map(m => MUSCLE_NAMES[m]);
   const routines = store.list('routines/').map(normRoutine).sort((a, b) => a.name.localeCompare(b.name));
-  const [preview, setPreview] = useState(null);
   const start = r => {
     if (store.get('gym/active')){ env.app.showToast('Finish or discard the workout in progress first.'); env.go({ type: 'workout' }); return; }
     startWorkout(app, r); env.go({ type: 'workout' });
   };
   return html`<div class="stack">
-    <header class="head"><h1 class="grow">Gym</h1>
-      ${active ? html`<button class="btn btn-pop sm" onClick=${() => env.go({ type: 'workout' })}>Resume workout</button>`
-        : html`<button class="btn btn-pop sm" onClick=${() => start(null)}>+ Start workout</button>`}
-    </header>
+    <header class="head"><h1 class="grow">Gym</h1></header>
+    ${active
+      ? html`<button class="bigbtn live" onClick=${() => env.go({ type: 'workout' })}><span class="wdot"></span><span class="grow">Resume ${active.name}</span><${Ico} d=${UI.fwd} size=${20}/></button>`
+      : html`<button class="bigbtn" onClick=${() => start(null)}><${Ico} d=${UI.plus} size=${24}/><span class="grow">Start empty workout</span></button>`}
+    <${RoutinesSection} env=${env} routines=${routines} start=${start}/>
     <section class="card">
       <div class="row-between"><h2 class="card-title">${plural(week.length, 'workout', 'workouts')} this week</h2>${streak > 1 && html`<span class="streak">${streak}-week streak</span>`}</div>
       <div class="weekdots">${days.map(d => { const n = all.filter(w => w.date === d).length; return html`<span key=${d} class=${d === today ? 'today' : ''}><i class=${n ? 'on' : ''}></i>${parseKey(d).toLocaleDateString(undefined, { weekday: 'narrow' })}</span>`; })}</div>
@@ -152,11 +152,6 @@ function GymHome({ env, active }){
       ${ranked.length > 0 && missing.length > 0 && html`<p class="hint">Not trained yet this week: ${missing.join(', ')}.</p>`}
     </section>
     <section class="stack-sm">
-      <div class="row-between"><h2 class="label">Routines</h2><button class="link" onClick=${() => env.go({ type: 'routine', id: null })}>+ New</button></div>
-      ${routines.length ? html`<div class="rchips">${routines.map(r => html`<button key=${r.id} class="rchip" onClick=${() => setPreview(r)}>${r.name}<${Ico} d=${UI.fwd} size=${14} sw=${2.6}/></button>`)}</div>`
-        : html`<p class="hint">Save the workouts you repeat, like “Push day”, and start them with one tap.</p>`}
-    </section>
-    <section class="stack-sm">
       <div class="row-between"><h2 class="label">Recent workouts</h2><button class="link" onClick=${() => env.go({ type: 'library' })}>Exercises</button></div>
       ${all.slice(0, 15).map(w => html`<button key=${w.id} class="wcard" onClick=${() => env.go({ type: 'detail', id: w.id })}>
         <span class="row-between"><span class="row-title">${w.name}</span><span class="cat-sub">${relDay(w.date, today)} · ${fmtDur(w.end - w.start)}</span></span>
@@ -165,13 +160,66 @@ function GymHome({ env, active }){
       </button>`)}
       ${all.length === 0 && html`<section class="card"><p class="hint">Your workouts show up here. Tap “Start workout”, add exercises and log your sets.</p></section>`}
     </section>
-    ${preview && html`<${Sheet} title=${preview.name} close=${() => setPreview(null)}>
-      <div class="list">${preview.items.map((it, i) => html`<div key=${i} class="prev-row"><span class="grow">${exById(it.ex).n}</span><span class="cat-sub">${setCount(it)}</span></div>`)}</div>
-      <div class="btn-row two"><button class="btn btn-ghost" onClick=${() => { setPreview(null); env.go({ type: 'routine', id: preview.id }); }}>Edit</button><button class="btn btn-pop" onClick=${() => { setPreview(null); start(preview); }}>Start</button></div>
-    <//>`}
   </div>`;
 }
-const setCount = it => { const w = it.sets.filter(x => x.t === 'w').length, n = it.sets.length - w; return (w ? w + ' warm-up + ' : '') + plural(n, 'set', 'sets'); };
+/* ---------- Routines on the Gym home: Hevy-style cards in collapsible folders ----------
+   gym/folders = { list: [{ id, name }], closed: { folderId|'mine': true } }; a routine's folder is routine.folder (none = My Routines) */
+const foldersDoc = () => Object.assign({ list: [], closed: {} }, store.get('gym/folders') || {});
+function RoutinesSection({ env, routines, start }){
+  const { app } = env;
+  const [sheet, setSheet] = useState(null);
+  const [name, setName] = useState('');
+  const fd = foldersDoc();
+  const saveFd = patch => store.set('gym/folders', Object.assign({}, fd, patch));
+  const toggle = fid => saveFd({ closed: Object.assign({}, fd.closed, { [fid]: !fd.closed[fid] }) });
+  const known = new Set(fd.list.map(f => f.id));
+  const groups = fd.list.map(f => ({ id: f.id, name: f.name, items: routines.filter(r => r.folder === f.id) }))
+    .concat([{ id: 'mine', name: 'My Routines', items: routines.filter(r => !r.folder || !known.has(r.folder)) }]);
+  const nameSheet = (title, initial, ok) => { setName(initial); setSheet({ kind: 'name', title, ok }); };
+  const newFolder = () => nameSheet('New folder', '', n => saveFd({ list: fd.list.concat([{ id: uid(), name: n }]) }));
+  const routineMenu = r => setSheet({ kind: 'routine', r });
+  const folderMenu = g => setSheet({ kind: 'folder', g });
+  const moveTo = (r, fid) => { const doc = store.get('routines/' + r.id); store.set('routines/' + r.id, Object.assign({}, doc, { folder: fid === 'mine' ? null : fid })); setSheet(null); };
+  const duplicate = r => { const doc = store.get('routines/' + r.id), id = uid(); store.set('routines/' + id, Object.assign(clone(doc), { id, name: doc.name + ' (copy)' })); setSheet(null); app.showToast('Routine duplicated.'); };
+  const del = r => { setSheet(null); app.setSheet({ kind: 'confirm', title: 'Delete ' + r.name + '?', ok: 'Delete', danger: true, text: 'Past workouts stay in your history.',
+    run: () => { const doc = store.get('routines/' + r.id); store.del('routines/' + r.id); app.showToast('Routine deleted.', { label: 'Undo', run: () => store.set('routines/' + r.id, doc) }); } }); };
+  return html`<section class="stack-sm">
+    <div class="row-between"><h2 class="section-t">Routines</h2><button class="icon-btn" aria-label="New folder" onClick=${newFolder}><${Ico} d=${UI.folderPlus} size=${24}/></button></div>
+    <button class="bigbtn sm" onClick=${() => env.go({ type: 'routine', id: null })}><${Ico} d=${UI.clipboard} size=${22}/><span class="grow">New routine</span></button>
+    ${groups.map(g => (g.id !== 'mine' || g.items.length > 0 || fd.list.length === 0) && html`<div key=${g.id} class="folder">
+      <div class="folder-head">
+        <button class="folder-t" aria-expanded=${String(!fd.closed[g.id])} onClick=${() => toggle(g.id)}><span class=${'tri' + (fd.closed[g.id] ? ' shut' : '')}>▾</span>${g.name} (${g.items.length})</button>
+        ${g.id !== 'mine' && html`<button class="icon-btn" aria-label=${'Options for folder ' + g.name} onClick=${() => folderMenu(g)}><${Ico} d=${UI.dots} size=${20}/></button>`}
+      </div>
+      ${!fd.closed[g.id] && html`<div class="list">
+        ${g.items.map(r => html`<div key=${r.id} class="rcard">
+          <div class="row-between"><button class="rcard-t" onClick=${() => env.go({ type: 'routine', id: r.id })}>${r.name}</button>
+            <button class="icon-btn" aria-label=${'Options for ' + r.name} onClick=${() => routineMenu(r)}><${Ico} d=${UI.dots} size=${22}/></button></div>
+          <p class="rcard-ex">${r.items.map(it => exById(it.ex).n).join(', ') || 'No exercises yet'}</p>
+          <button class="btn btn-pop" onClick=${() => start(r)}>Start routine</button>
+        </div>`)}
+        ${g.items.length === 0 && html`<p class="hint">${g.id === 'mine' ? 'Save the workouts you repeat, like “Push day”, and start them with one tap.' : 'Empty. Move routines here with their ⋯ menu.'}</p>`}
+      </div>`}
+    </div>`)}
+    ${sheet && sheet.kind === 'name' && html`<${Sheet} title=${sheet.title} close=${() => setSheet(null)}>
+      <input class="input inset" aria-label="Name" placeholder="Like “Upper / Lower”" value=${name} onInput=${e => setName(e.target.value)}/>
+      <button class="btn btn-pop" disabled=${!name.trim()} onClick=${() => { sheet.ok(name.trim()); setSheet(null); }}>Save</button>
+    <//>`}
+    ${sheet && sheet.kind === 'routine' && html`<${Sheet} title=${sheet.r.name} close=${() => setSheet(null)}>
+      <button class="row-btn" onClick=${() => { setSheet(null); env.go({ type: 'routine', id: sheet.r.id }); }}>Edit routine</button>
+      <button class="row-btn" onClick=${() => duplicate(sheet.r)}>Duplicate</button>
+      <span class="label">Move to folder</span>
+      <div class="list">${[{ id: 'mine', name: 'My Routines' }].concat(fd.list).map(f => html`<button key=${f.id} class="act-pick" aria-pressed=${String((sheet.r.folder && known.has(sheet.r.folder) ? sheet.r.folder : 'mine') === f.id)} onClick=${() => moveTo(sheet.r, f.id)}>
+        <span class="grow row-title">${f.name}</span><span class=${'radio' + ((sheet.r.folder && known.has(sheet.r.folder) ? sheet.r.folder : 'mine') === f.id ? ' on' : '')}></span></button>`)}</div>
+      <button class="row-btn" onClick=${() => { setSheet(null); newFolder(); }}>+ New folder</button>
+      <button class="btn btn-danger" onClick=${() => del(sheet.r)}>Delete routine</button>
+    <//>`}
+    ${sheet && sheet.kind === 'folder' && html`<${Sheet} title=${sheet.g.name} close=${() => setSheet(null)}>
+      <button class="row-btn" onClick=${() => nameSheet('Rename folder', sheet.g.name, n => saveFd({ list: fd.list.map(f => f.id === sheet.g.id ? Object.assign({}, f, { name: n }) : f) }))}>Rename</button>
+      <button class="btn btn-danger" onClick=${() => { saveFd({ list: fd.list.filter(f => f.id !== sheet.g.id) }); setSheet(null); app.showToast('Folder deleted. Its routines moved to My Routines.'); }}>Delete folder</button>
+    <//>`}
+  </section>`;
+}
 const relDay = (d, today) => d === today ? 'Today' : d === shiftDay(today, -1) ? 'Yesterday' : fmtShort(d);
 
 function Sheet({ title, close, children, tall }){
