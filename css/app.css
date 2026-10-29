@@ -667,3 +667,9 @@ b,.stype,.link,.left,.goal-t,.streak,.wbar,.kcal-n{font-weight:650}
 .tc-day.today{color:var(--fg); font-weight:650}
 .tc-day.today i{box-shadow:0 0 0 2px var(--card), 0 0 0 3.5px var(--fg)}
 @media (min-width:960px){ .tcards{height:auto; min-height:0} .tcard{min-height:180px} }
+
+/* Diet log: the goal line is a quiet note, not a banner */
+.goal.slim{flex-direction:row; align-items:center; gap:7px; padding:0; background:none; color:var(--muted)}
+.goal.slim .goal-t{font-size:13px; font-weight:400}
+.goal.slim::before{content:""; width:7px; height:7px; flex:none; border-radius:50%; background:var(--muted)}
+.goal-bulk.slim::before{background:var(--good)} .goal-cut.slim::before{background:var(--warn)}

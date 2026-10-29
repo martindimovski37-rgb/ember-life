@@ -478,9 +478,9 @@ export function goalFor(kcal, maint){
 const signed = (n, d = 0) => (n > 0 ? '+' : n < 0 ? '−' : '±') + Math.abs(n).toFixed(d);
 export const goalTitle = g => g.kind === 'maintain' ? 'Maintaining' : g.kind === 'cut' ? 'Cutting' : 'Bulking';
 export const goalRate = g => g.kind === 'maintain' ? 'weight stays about the same' : '≈ ' + signed(g.perWeek, 2).replace(/0$/, '') + ' kg per week';
-export function GoalBadge({ g, full }){
+export function GoalBadge({ g, full, slim }){
   if (!g) return null;
-  return html`<div class=${'goal goal-' + g.kind}>
+  return html`<div class=${'goal goal-' + g.kind + (slim ? ' slim' : '')}>
     <span class="goal-t">${goalTitle(g)} · ${goalRate(g)}</span>
     ${full && html`<span class="goal-s">${signed(Math.round(g.diff))} kcal a day vs maintenance${g.fast ? (g.kind === 'cut' ? ' · on the fast side, muscle is at risk' : ' · on the fast side, expect extra fat gain') : ''}</span>`}
   </div>`;
@@ -661,7 +661,7 @@ function LogView({ env, ui, setUi }){
         ${target.kcal > 0 ? html`<span class=${'left' + (left < 0 ? ' over' : '')}>${left >= 0 ? kc(left) + ' left' : kc(-left) + ' over'}</span>`
           : html`<button class="link" onClick=${() => setSheet({ kind: 'targets' })}>Set targets</button>`}
       </div>
-      <${GoalBadge} g=${goalFor(target.kcal, maintenance())}/>
+      <${GoalBadge} g=${goalFor(target.kcal, maintenance())} slim=${true}/>
       <div class="bar-track big"><span class=${'bar-fill mk' + (target.kcal > 0 && tot.kcal > target.kcal * 1.1 ? ' over' : '')} style=${'width:' + (target.kcal > 0 ? Math.min(100, tot.kcal / target.kcal * 100) : 0) + '%'}></span></div>
       <div class="tbars">
         <${MacroBar} label="Protein" val=${tot.p} target=${target.p} unit="g" cls="mp"/>
