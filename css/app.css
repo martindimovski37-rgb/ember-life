@@ -101,7 +101,7 @@ button:disabled{cursor:default; opacity:.45}
 
 /* Tab bar (phone) */
 .tabbar{position:fixed; left:0; right:0; bottom:0; z-index:21; background:var(--card); border-top:1px solid var(--line); padding:4px max(8px, env(safe-area-inset-right, 0px)) calc(4px + env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px))}
-.tabbar-inner{max-width:560px; margin:0 auto; display:grid; grid-template-columns:repeat(4, minmax(0, 1fr))}
+.tabbar-inner{max-width:560px; margin:0 auto; display:grid; grid-template-columns:repeat(5, minmax(0, 1fr))}
 .tab{min-height:54px; border:0; background:transparent; color:var(--muted); font-weight:650; font-size:11px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px}
 .tab[aria-current="page"]{color:var(--accent)}
 .setbar{position:fixed; left:0; right:0; bottom:calc(64px + env(safe-area-inset-bottom, 0px)); padding:0 max(16px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px)); display:flex; justify-content:center; pointer-events:none; z-index:20}
@@ -631,12 +631,11 @@ b,.stype,.link,.left,.goal-t,.streak,.wbar,.kcal-n{font-weight:650}
 /* page title: small and centred, right under the iPhone blur strip */
 .head{position:relative; min-height:22px; height:22px; justify-content:center; margin-bottom:-8px}
 .head h1{flex:none; font-size:17px; font-weight:650; letter-spacing:-.01em; line-height:22px; text-align:center}
-.head .head-gear{position:absolute; right:-6px; top:50%; transform:translateY(-50%) scale(.85)}
 .head .head-sync{position:absolute; left:-6px; top:50%; transform:translateY(-50%) scale(.85)}
-@media (max-width:959px){ .shell{padding-top:var(--top-clear)} }
+@media (max-width:959px){ .shell{padding-top:calc(18px + var(--top-clear))} }
 
 /* ---------- Today: one card per section, fills the screen, no scrolling ---------- */
-.tcards{display:flex; flex-direction:column; gap:10px; height:calc(100dvh - var(--top-clear) - 28px - var(--tc-reserve, 138px) - env(safe-area-inset-bottom, 0px)); min-height:520px}
+.tcards{display:flex; flex-direction:column; gap:10px; height:calc(100dvh - var(--top-clear) - 46px - var(--tc-reserve, 138px) - env(safe-area-inset-bottom, 0px)); min-height:520px}
 .shell:has(.tcards){padding-bottom:0}
 .tcard{flex:1; min-height:0; width:100%; display:flex; flex-direction:column; gap:10px; padding:16px; border:0; border-radius:10px; background:var(--card); box-shadow:inset 0 0 0 1px var(--card-line); color:var(--fg); text-align:left}
 .tc-head{display:flex; align-items:center; gap:8px; color:var(--muted)}

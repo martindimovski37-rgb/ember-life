@@ -7,9 +7,9 @@ import { GymTab, WorkoutBar, workoutsList, SOUNDS, playSound } from './gym.js';
 import { AssistantButton, AssistantChat } from './assistant.js';
 import { AI_MODELS, aiModel, claude, aiError } from './claude.js';
 
-export const VERSION = '1.19';
-const TABS = [['today', 'Today', UI.sun], ['planner', 'Planner', UI.grid], ['diet', 'Diet', UI.diet], ['gym', 'Gym', UI.gym]];
-const ALL_TABS = TABS.map(t => t[0]).concat(['settings']);
+export const VERSION = '1.20';
+const TABS = [['today', 'Today', UI.sun], ['planner', 'Planner', UI.grid], ['diet', 'Diet', UI.diet], ['gym', 'Gym', UI.gym], ['settings', 'Settings', UI.gear]];
+const ALL_TABS = TABS.map(t => t[0]);
 
 export function App(){
   const [, setVersion] = useState(0);
@@ -62,7 +62,7 @@ export function App(){
     <div class="shell">
       <nav class="rail" aria-label="Sections">
         <div class="brand"><img src="icons/icon.svg" alt=""/>Ember Life</div>
-        ${TABS.concat([['settings', 'Settings', UI.gear]]).map(t => html`<button key=${t[0]} aria-current=${tab === t[0] ? 'page' : null} onClick=${() => go(t[0])}><${Ico} d=${t[2]} size=${19}/>${t[1]}</button>`)}
+        ${TABS.map(t => html`<button key=${t[0]} aria-current=${tab === t[0] ? 'page' : null} onClick=${() => go(t[0])}><${Ico} d=${t[2]} size=${19}/>${t[1]}</button>`)}
       </nav>
       <main class="main">${body}</main>
     </div>
@@ -125,7 +125,6 @@ function TodayView({ app }){
     <header class="head">
       ${sync.state === 'error' && html`<button class="icon-btn head-sync" aria-label="Sync problem, open Settings" style="color:var(--danger)" onClick=${() => go('settings')}><${Ico} d=${UI.sync}/></button>`}
       <h1>${fmtLong(today)}</h1>
-      <button class="icon-btn round head-gear" aria-label="Settings" onClick=${() => go('settings')}><${Ico} d=${UI.gear}/></button>
     </header>
 
     <div class="tcards" style=${'--tc-reserve:' + reserve}>
