@@ -284,35 +284,11 @@ function tone(ctx, at, freq, len, { type = 'sine', vol = 0.3, to } = {}){
   g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
   o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t + len + 0.05);
 }
-/* One hammer strike on a brass ring bell: a metallic click, then inharmonic partials that ring and fade.
-   Each partial is doubled slightly out of tune so the ring shimmers like real metal. */
-const BELL = [[0.5, 0.18, 3.2], [1, 1, 3.0], [2.32, 0.55, 2.2], [3.17, 0.3, 1.6], [4.25, 0.32, 1.2], [6.63, 0.16, 0.7], [9.38, 0.08, 0.4]];
-function bellStrike(ctx, out, at, f0, vol){
-  const t = ctx.currentTime + at;
-  BELL.forEach(([ratio, amp, decay]) => [-0.9, 0.9].forEach(beat => {
-    const o = ctx.createOscillator(), g = ctx.createGain();
-    o.frequency.setValueAtTime(f0 * ratio + beat, t);
-    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol * amp / 2, t + 0.002); g.gain.exponentialRampToValueAtTime(0.0001, t + decay);
-    o.connect(g); g.connect(out); o.start(t); o.stop(t + decay + 0.05);
-  }));
-  const n = ctx.createBufferSource(), b = ctx.createBuffer(1, Math.round(SR * 0.03), SR), d = b.getChannelData(0);
-  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 3);
-  const bp = ctx.createBiquadFilter(), ng = ctx.createGain();
-  bp.type = 'bandpass'; bp.frequency.value = 3200; bp.Q.value = 1.2; ng.gain.value = vol * 0.9;
-  n.buffer = b; n.connect(bp); bp.connect(ng); ng.connect(out); n.start(t);
-}
-function boxingBell(ctx){
-  const comp = ctx.createDynamicsCompressor(), master = ctx.createGain();
-  comp.threshold.value = -12; comp.ratio.value = 6; master.gain.value = 0.7;
-  comp.connect(master); master.connect(ctx.destination);
-  [0, 0.3].forEach(t => bellStrike(ctx, comp, t, 1180, 0.45));
-}
 function synth(ctx, kind){
   if (kind === 'beep') [0, 0.3, 0.6].forEach(t => tone(ctx, t, 880, 0.18, { type: 'square', vol: 0.18 }));
   else if (kind === 'bell') [0, 0.9].forEach(t => { tone(ctx, t, 660, 1.4, { vol: 0.5 }); tone(ctx, t, 1650, 0.9, { vol: 0.16 }); tone(ctx, t, 2640, 0.5, { vol: 0.08 }); });
   else if (kind === 'whistle') [0, 0.55].forEach(t => tone(ctx, t, 1400, 0.4, { vol: 0.4, to: 2600 }));
   else if (kind === 'ding') [0, 0.32, 0.64].forEach(t => tone(ctx, t, 1568, 0.3, { type: 'triangle', vol: 0.5 }));
-  else if (kind === 'boxing') boxingBell(ctx);
   else [[0, 1047], [0.16, 1319], [0.32, 1568], [0.6, 2093]].forEach(([t, f]) => tone(ctx, t, f, 0.7, { vol: 0.4 }));
 }
 function toWav(data){
@@ -326,8 +302,9 @@ function toWav(data){
 const soundUrls = {};
 async function renderSound(kind){
   if (soundUrls[kind]) return soundUrls[kind];
+  if (kind === 'boxing') return (soundUrls[kind] = 'sounds/boxing.m4a');  /* a real ringside bell recording, cut to two dings */
   const O = window.OfflineAudioContext || window.webkitOfflineAudioContext; if (!O) return null;
-  const ctx = new O(1, SR * (kind === 'boxing' ? 3.8 : 2), SR); synth(ctx, kind);
+  const ctx = new O(1, SR * 2, SR); synth(ctx, kind);
   const out = await ctx.startRendering();
   return (soundUrls[kind] = URL.createObjectURL(toWav(out.getChannelData(0))));
 }

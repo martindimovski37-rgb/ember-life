@@ -1,9 +1,9 @@
 /* Ember Life offline cache. Network first so updates show up right away; the cache is the fallback
    when there's no signal (e.g. in the gym). Own files are always re-checked with the server (GitHub Pages
    otherwise lets phones reuse a file for 10 minutes). Bump VERSION on every release. */
-const VERSION = 'ember-life-25';
+const VERSION = 'ember-life-26';
 const SHELL = ['./', 'index.html', 'css/app.css', 'vendor/preact-htm.umd.js', 'js/main.js', 'js/app.js', 'js/lib.js', 'js/store.js', 'js/planner.js', 'js/diet.js', 'js/gym.js', 'js/bodymap.js', 'js/claude.js', 'js/assistant.js', 'vendor/anthropic-sdk.mjs', 'vendor/node-buffer.mjs', 'data/exercises.json', 'vendor/zxing.min.js',
-  'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
+  'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'sounds/boxing.m4a'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
