@@ -13,7 +13,7 @@ export function normConfig(d){
   return {
     energy,
     categories: (Array.isArray(src.categories) ? src.categories : []).map(c => ({
-      id: String(c.id), name: c.name || '', color: COLOR[c.color] ? c.color : (LEGACY_COLOR[c.color] || 'grape'), icon: ICON[c.icon] ? c.icon : 'star',
+      id: String(c.id), name: c.name || '', color: COLOR[c.color] ? c.color : (LEGACY_COLOR[c.color] || 'flame'), icon: ICON[c.icon] ? c.icon : 'star',
       max: Number.isFinite(c.max) ? c.max : 1, required: !!c.required,
       activities: (Array.isArray(c.activities) ? c.activities : []).map(a => ({ id: String(a.id), name: a.name || '', energy: a.energy || '', duration: a.duration || '' }))
     })),

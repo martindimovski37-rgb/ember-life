@@ -1,13 +1,13 @@
 /* App shell: tabs, Today, Settings, toasts. */
-import { html, useState, useEffect, useRef, Ico, UI, Ring, dayKey, fmtLong, plural, scrollTop } from './lib.js';
+import { html, useState, useEffect, useRef, Ico, UI, Ring, dayKey, parseKey, weekStartKey, fmtLong, plural, scrollTop, tint } from './lib.js';
 import { store, sync, deviceGet, deviceSet } from './store.js';
-import { plannerCtx, PlannerTab, PlanItems, RequiredSheet } from './planner.js';
+import { plannerCtx, PlannerTab, RequiredSheet } from './planner.js';
 import { DietTab, TargetsForm, dayTotals, targetsFor, kc, g1 } from './diet.js';
-import { GymTab, WorkoutBar, workedOutOn, SOUNDS, playSound } from './gym.js';
+import { GymTab, WorkoutBar, workoutsList, SOUNDS, playSound } from './gym.js';
 import { AssistantButton, AssistantChat } from './assistant.js';
 import { AI_MODELS, aiModel, claude, aiError } from './claude.js';
 
-export const VERSION = '1.17';
+export const VERSION = '1.18';
 const TABS = [['today', 'Today', UI.sun], ['planner', 'Planner', UI.grid], ['diet', 'Diet', UI.diet], ['gym', 'Gym', UI.gym]];
 const ALL_TABS = TABS.map(t => t[0]).concat(['settings']);
 
@@ -99,40 +99,72 @@ function ConfirmSheet({ sheet, close }){
 }
 
 /* ---------- Today ---------- */
+/* One card per section, filling the screen between the title and the tab bar. Each opens its tab. */
 function TodayView({ app }){
   const { p, today, go } = app;
   const cur = p.cur;
   const planToday = cur.set && cur.date === today;
   const items = planToday ? cur.items || [] : [];
-  const nDone = items.filter(i => (cur.done || []).includes(i.id)).length;
-  const tot = dayTotals(today), tg = targetsFor(today), gymDone = workedOutOn(today);
+  const done = new Set(cur.done || []);
+  const nDone = items.filter(i => done.has(i.id)).length;
+  const next = items.find(i => !done.has(i.id));
+  const tot = dayTotals(today), tg = targetsFor(today);
+  const all = workoutsList();
+  const todays = all.filter(w => w.date === today);
+  const w = todays[0];
+  const wk = weekStartKey(today);
+  const days = Array.from({ length: 7 }, (_, i) => { const d = parseKey(wk); d.setDate(d.getDate() + i); return dayKey(d); });
+  const nWeek = all.filter(x => days.includes(x.date)).length;
+  const mins = w && w.end ? Math.round((w.end - w.start) / 60000) : 0;
+  const nSets = w ? (w.exercises || []).reduce((n, e) => n + (e.sets || []).length, 0) : 0;
+  const reserve = store.get('gym/active') ? '198px' : '138px';
+  const ring = (value, max, color, mid) => html`<div class="tc-ring"><${Ring} value=${value} max=${max} color=${color} size=${92} stroke=${10}/><div class="tc-mid">${mid}</div></div>`;
+  const head = (label, note) => html`<div class="tc-head"><span class="label">${label}</span>${note ? html`<span class="tc-note">${note}</span>` : html`<span class="tc-note"></span>`}<${Ico} d=${UI.fwd} size=${14} sw=${2.4}/></div>`;
+  const macro = (name, v, t, color) => html`<div class="tc-m"><div class="tc-m-top"><b>${name}</b><span>${g1(v)}${t ? '/' + g1(t) : ''}</span></div><div class="tc-bar"><i style=${'width:' + (t ? Math.min(100, v / t * 100) : 0) + '%;background:' + color}></i></div></div>`;
   return html`<div class="stack">
     <header class="head">
-      <div class="grow col"><span class="eyebrow">${fmtLong(today)}</span><h1>Today</h1></div>
-      ${sync.state === 'error' && html`<button class="icon-btn" aria-label="Sync problem, open Settings" style="color:var(--danger)" onClick=${() => go('settings')}><${Ico} d=${UI.sync}/></button>`}
-      <button class="icon-btn round" aria-label="Settings" onClick=${() => go('settings')}><${Ico} d=${UI.gear}/></button>
+      ${sync.state === 'error' && html`<button class="icon-btn head-sync" aria-label="Sync problem, open Settings" style="color:var(--danger)" onClick=${() => go('settings')}><${Ico} d=${UI.sync}/></button>`}
+      <h1>${fmtLong(today)}</h1>
+      <button class="icon-btn round head-gear" aria-label="Settings" onClick=${() => go('settings')}><${Ico} d=${UI.gear}/></button>
     </header>
 
-    <section class="card" aria-label="Today at a glance">
-      <div class="rings">
-        <button class="ring" onClick=${() => go('diet')}><${Ring} value=${tot.kcal} max=${tg.kcal} color="var(--ring-kcal)"/><span class="ring-val">${kc(tot.kcal)}</span><span class="ring-sub">${tg.kcal ? 'of ' + kc(tg.kcal) + ' kcal' : 'kcal'}</span></button>
-        <button class="ring" onClick=${() => go('diet')}><${Ring} value=${tot.p} max=${tg.p} color="var(--ring-protein)"/><span class="ring-val">${g1(tot.p)} g</span><span class="ring-sub">${tg.p ? 'of ' + g1(tg.p) + ' g protein' : 'protein'}</span></button>
-        <button class="ring" onClick=${() => go('gym')}><${Ring} value=${gymDone ? 1 : 0} max=${1} color="var(--ring-gym)"/><span class="ring-val">${gymDone ? 'Done' : '–'}</span><span class="ring-sub">${gymDone ? 'workout' : 'gym'}</span></button>
-      </div>
-      ${!tg.kcal && html`<p class="hint">Set your calorie and protein targets in Settings to fill the rings.</p>`}
-    </section>
+    <div class="tcards" style=${'--tc-reserve:' + reserve}>
+      <button class="tcard" onClick=${() => { p.setSub('plan'); go('planner'); }}>
+        ${head('Planner')}
+        <div class="tc-body">
+          ${ring(nDone, items.length, 'var(--ring-plan)', planToday ? html`<span class="tc-big">${nDone}/${items.length}</span><span class="tc-small">done</span>` : html`<span class="tc-big">–</span><span class="tc-small">no plan</span>`)}
+          <div class="tc-side">
+            ${planToday
+              ? html`<div class="tc-dots">${items.map(it => html`<span key=${it.id} class=${'tc-dot' + (done.has(it.id) ? ' on' : '')} style=${'--t:' + tint(it.color)}>${done.has(it.id) && html`<${Ico} d=${UI.check} size=${11} sw=${3.4}/>`}</span>`)}</div>
+                     <div class="tc-line">${next ? html`Next up · <b>${next.name}</b>${next.duration ? ' · ' + next.duration : ''}` : 'All done for today'}</div>`
+              : html`<div class="tc-line">No plan for today yet. Tap to plan your day.</div>`}
+          </div>
+        </div>
+      </button>
 
-    <section class="card">
-      <div class="row-between">
-        <h2 class="card-title">Plan</h2>
-        ${planToday && html`<span class="cat-sub">${nDone} of ${items.length} done</span>`}
-      </div>
-      ${planToday
-        ? html`<${PlanItems} ctx=${p} compact=${true}/>
-               <button class="btn btn-ghost sm" onClick=${() => { p.setSub('plan'); go('planner'); }}>Open planner</button>`
-        : html`<p class="hint">No plan for today yet. Pick a few things if you feel like it.</p>
-               <button class="btn btn-pop" onClick=${() => { p.setSub('plan'); go('planner'); }}>Plan my day</button>`}
-    </section>
+      <button class="tcard" onClick=${() => go('diet')}>
+        ${head('Diet', tg.kcal ? (tg.kcal - tot.kcal >= 0 ? kc(tg.kcal - tot.kcal) + ' kcal left' : kc(tot.kcal - tg.kcal) + ' kcal over') : '')}
+        <div class="tc-body">
+          ${ring(tot.kcal, tg.kcal, 'var(--ring-kcal)', html`<span class="tc-big">${kc(tot.kcal)}</span><span class="tc-small">${tg.kcal ? 'of ' + kc(tg.kcal) : 'kcal'}</span>`)}
+          <div class="tc-side">
+            ${tg.kcal || tg.p
+              ? html`<div class="tc-macros">${macro('Protein', tot.p, tg.p, 'var(--m-p)')}${macro('Carbs', tot.c, tg.c, 'var(--m-c)')}${macro('Fat', tot.fat, tg.fat, 'var(--m-f)')}</div>`
+              : html`<div class="tc-line">Set your targets in Settings to see protein, carbs and fat here.</div>`}
+          </div>
+        </div>
+      </button>
+
+      <button class="tcard" onClick=${() => go('gym')}>
+        ${head('Gym', nWeek ? plural(nWeek, 'workout', 'workouts') + ' this week' : '')}
+        <div class="tc-body">
+          ${ring(w ? 1 : 0, 1, 'var(--ring-gym)', w ? html`<span style="color:var(--ring-gym)"><${Ico} d=${UI.check} size=${26} sw=${3}/></span><span class="tc-small">done</span>` : html`<span class="tc-big">–</span><span class="tc-small">not yet</span>`)}
+          <div class="tc-side">
+            ${w ? html`<div class="tc-title">${w.name || 'Workout'} <span>· ${mins ? mins + ' min · ' : ''}${plural(nSets, 'set', 'sets')}</span></div>` : html`<div class="tc-line">No workout yet today.</div>`}
+            <div class="tc-week">${days.map(d => html`<span key=${d} class=${'tc-day' + (all.some(x => x.date === d) ? ' on' : '') + (d === today ? ' today' : '')}><i></i>${parseKey(d).toLocaleDateString(undefined, { weekday: 'narrow' })}</span>`)}</div>
+          </div>
+        </div>
+      </button>
+    </div>
   </div>`;
 }
 

@@ -2,17 +2,16 @@
 export const { html, render, useState, useEffect, useRef, useMemo, useCallback } = window.htmPreact;
 
 /* ---------- Category palette & icons (kept from Day Planner so saved plans keep their look) ---------- */
+/* Category colours: one warm "fire" family (Ember Theme). Values are CSS variables so dark mode can brighten them. */
 export const COLORS = [
-  ['grape','Grape','#6D28D9'], ['indigo','Indigo','#4338CA'], ['navy','Navy','#1E3A8A'], ['blue','Blue','#1D4ED8'],
-  ['sky','Sky','#0369A1'], ['cyan','Cyan','#0E7490'], ['teal','Teal','#0F766E'], ['emerald','Emerald','#047857'],
-  ['green','Green','#15803D'], ['olive','Olive','#4D7C0F'], ['gold','Gold','#A16207'], ['amber','Amber','#B45309'],
-  ['orange','Orange','#C2410C'], ['red','Red','#B91C1C'], ['rose','Rose','#BE123C'], ['pink','Pink','#BE185D'],
-  ['magenta','Magenta','#A21CAF'], ['plum','Plum','#7E22CE'], ['cocoa','Cocoa','#7C4A2D'], ['slate','Slate','#334155'],
-  ['graphite','Graphite','#3F3F46']
+  ['wine','Wine','var(--c-wine)'], ['scarlet','Scarlet','var(--c-scarlet)'], ['flame','Flame','var(--c-flame)'], ['rust','Rust','var(--c-rust)'],
+  ['tangerine','Tangerine','var(--c-tangerine)'], ['amber','Amber','var(--c-amber)'], ['ochre','Ochre','var(--c-ochre)'], ['graphite','Graphite','var(--c-graphite)']
 ];
 export const COLOR = Object.fromEntries(COLORS.map(c => [c[0], c[2]]));
-export const LEGACY_COLOR = { purple: 'grape' };
-export const tint = k => COLOR[k] || COLOR[LEGACY_COLOR[k]] || COLOR.grape;
+/* older palette names map onto the fire family */
+export const LEGACY_COLOR = { olive: 'wine', cocoa: 'flame', orange: 'tangerine', green: 'amber', red: 'rust', grape: 'scarlet', purple: 'scarlet', indigo: 'wine', navy: 'wine',
+  blue: 'scarlet', sky: 'flame', cyan: 'rust', teal: 'tangerine', emerald: 'amber', gold: 'ochre', rose: 'scarlet', pink: 'flame', magenta: 'scarlet', plum: 'wine', slate: 'graphite' };
+export const tint = k => COLOR[k] || COLOR[LEGACY_COLOR[k]] || COLOR.flame;
 
 export const ICONS = [
   ['screen','Screen','M3 6h18v12H3z M10 9.5v5l4-2.5z'],
