@@ -6,9 +6,9 @@ import { DietTab, TargetsForm, dayTotals, targetsFor, kc, g1 } from './diet.js';
 import { GymTab, WorkoutBar, workoutsList, SOUNDS, playSound } from './gym.js';
 import { AssistantButton, AssistantChat } from './assistant.js';
 import { AI_MODELS, aiModel, claude, aiError } from './claude.js';
-import { warmSlide } from './fx.js';
+import { pageFade } from './fx.js';
 
-export const VERSION = '1.26';
+export const VERSION = '1.27';
 const TABS = [['today', 'Today', UI.sun], ['planner', 'Planner', UI.grid], ['diet', 'Diet', UI.diet], ['gym', 'Gym', UI.gym], ['settings', 'Settings', UI.gear]];
 const ALL_TABS = TABS.map(t => t[0]);
 
@@ -40,7 +40,7 @@ export function App(){
   };
   const setUi = patch => setUiState(s => Object.assign({}, s, patch));
   const go = t => {
-    if (t !== tab) warmSlide(Math.sign(ALL_TABS.indexOf(t) - ALL_TABS.indexOf(tab)));
+    if (t !== tab) pageFade();
     setTab(t);
     if (t === 'planner') setUi({ edit: null });
     if (t === 'diet') setUi({ dedit: null });

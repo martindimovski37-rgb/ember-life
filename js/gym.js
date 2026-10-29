@@ -717,7 +717,7 @@ function Chart({ points }){
   const vs = points.map(p => p.v), lo = Math.min(...vs), hi = Math.max(...vs), span = Math.max(hi - lo, 1);
   const xy = points.map((p, i) => [P + i / (points.length - 1) * (W - 2 * P), P + (hi - p.v) / span * (H - 2 * P - 14) + 6]);
   return html`<svg class="wchart" viewBox=${'0 0 ' + W + ' ' + H} role="img" aria-label=${'Estimated 1RM from ' + r1(vs[0]) + ' to ' + r1(vs[vs.length - 1]) + ' kg'}>
-    <polyline points=${xy.map(p => p.join(',')).join(' ')} fill="none" stroke="var(--gold)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+    <polyline class="wline" pathLength="100" points=${xy.map(p => p.join(',')).join(' ')} fill="none" stroke="var(--gold)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
     ${xy.map((p, i) => html`<circle key=${i} cx=${p[0]} cy=${p[1]} r="3.5" fill="var(--gold)"/>`)}
     <text x=${P} y=${H - 2} class="ctext">${fmtShort(points[0].d)}</text>
     <text x=${W - P} y=${H - 2} class="ctext" text-anchor="end">${r1(vs[vs.length - 1])} kg</text>

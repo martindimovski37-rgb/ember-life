@@ -778,7 +778,7 @@ function WeightChart({ list }){
   const span = Math.max(hi - lo, 1), t0 = t[0], tr = (t[t.length - 1] - t0) || 1;
   const xy = pts.map((w, i) => [P + (t[i] - t0) / tr * (W - 2 * P), P + (hi + span * 0.1 - w.kg) / (span * 1.2) * (H - 2 * P)]);
   return html`<svg class="wchart" viewBox=${'0 0 ' + W + ' ' + H} role="img" aria-label=${'Weight from ' + g1(pts[0].kg) + ' to ' + g1(pts[pts.length - 1].kg) + ' kg'}>
-    <polyline points=${xy.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ')} fill="none" stroke="var(--pop)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+    <polyline class="wline" pathLength="100" points=${xy.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ')} fill="none" stroke="var(--pop)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
     ${xy.map((p, i) => html`<circle key=${i} cx=${p[0].toFixed(1)} cy=${p[1].toFixed(1)} r="3.5" fill="var(--pop)"/>`)}
   </svg>`;
 }

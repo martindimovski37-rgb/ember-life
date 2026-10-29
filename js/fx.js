@@ -1,5 +1,5 @@
 /* Fire effects: one full-screen canvas for sparks, embers and flames, plus the opening screen,
-   the Ignite button presses, tick flames and the Warm slide between tabs. All of it is skipped with Reduce Motion. */
+   the Ignite button presses and tick flames. All of it is skipped with Reduce Motion. */
 
 const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 const isDark = () => { const t = document.documentElement.getAttribute('data-theme'); return t ? t === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; };
@@ -86,16 +86,14 @@ function releaseMain(){
   if (!el.isConnected) return;
   restart(el, 'ig-blast');
   const p = Math.min(1, (performance.now() - t0) / 900), b = el.getBoundingClientRect(), cx = b.left + b.width / 2, cy = b.top + b.height / 2;
-  for (let i = 0; i < 6; i++) burst(b.left + b.width * (i + .5) / 6, cy, Math.round(3 + p * 6), 'flame', { w: 30, spd: 1 + p, size: .7 + p * .5 });
-  burst(cx, cy, Math.round(14 + p * 40), 'spark', { ang: -Math.PI / 2, spread: 2.4, spd: 1 + p * .6 });
-  burst(cx, cy, Math.round(10 + p * 20), 'ember', { w: b.width, spd: 1.4 });
-  flash(cx, cy, .4 + p * .5, 600);
+  for (let i = 0; i < 6; i++) burst(b.left + b.width * (i + .5) / 6, cy, Math.round(2 + p * 3), 'flame', { w: 30, spd: 1 + p * .6, size: .6 + p * .3 });
+  burst(cx, cy, Math.round(4 + p * 8), 'ember', { w: b.width, spd: 1.2 });
+  flash(cx, cy, .25 + p * .3, 500);
 }
 let lit = null;
 function releaseGhost(){
   if (!lit) return;
   const { el, stop } = lit; lit = null; stop(); el.classList.remove('ig-lit');
-  if (el.isConnected){ const [x, y] = mid(el); burst(x, y, 14, 'spark', { spd: .8 }); }
 }
 function tickFire(el){
   const t = el.matches('.plan-item,.mini-item') ? el.querySelector('.tick') || el : el;
@@ -103,7 +101,7 @@ function tickFire(el){
   const ring = document.createElement('span'); ring.className = 'fx-ring'; ring.style.cssText = `left:${x}px;top:${y}px;--s:${r.width + 14}px`; document.body.appendChild(ring);
   ring.animate([{ opacity: 1, transform: 'translate(-50%,-50%) rotate(0) scale(.7)' }, { opacity: 1, offset: .7 }, { opacity: 0, transform: 'translate(-50%,-50%) rotate(420deg) scale(1.6)' }], { duration: 800, easing: 'ease-out' }).finished.then(() => ring.remove());
   t.animate([{ transform: 'scale(.5)' }, { transform: 'scale(1.35)', offset: .55 }, { transform: 'scale(1)' }], { duration: 500, delay: 100, easing: 'cubic-bezier(.34,1.56,.64,1)', fill: 'backwards' });
-  burst(x, y - 4, 18, 'flame', { w: 10, size: .8, spd: 1.2 }); burst(x, y, 14, 'ember', { w: 16 }); burst(x, y, 16, 'spark', { spd: .8 });
+  burst(x, y - 4, 8, 'flame', { w: 10, size: .6 }); burst(x, y, 5, 'ember', { w: 16 });
 }
 const isOn = el => el.classList.contains('done') || el.classList.contains('on') || el.getAttribute('aria-pressed') === 'true';
 
@@ -117,7 +115,7 @@ export function installIgnite(){
       held = { el: m, t0, stop: emit(() => {
         if (!m.isConnected) return;
         const b = m.getBoundingClientRect(), p = Math.min(1, (performance.now() - t0) / 900);
-        for (let i = 0; i < 1 + p * 3; i++) burst(b.left + R() * b.width, b.top + b.height * (1 - p * .9), 1, R() < .5 ? 'ember' : 'flame', { w: 4, size: .5 + p * .5, spd: .6 + p });
+        for (let i = 0; i < p * 2; i++) burst(b.left + R() * b.width, b.top + b.height * (1 - p * .9), 1, R() < .5 ? 'ember' : 'flame', { w: 4, size: .5 + p * .5, spd: .6 + p });
       }) };
       return;
     }
@@ -127,8 +125,8 @@ export function installIgnite(){
       lit = { el: gh, stop: emit(() => {
         if (!gh.isConnected) return;
         const b = gh.getBoundingClientRect();
-        if (R() < .7) burst(b.left + R() * b.width, b.top + 2, 1, 'ember', { w: 2 });
-        if (R() < .4) burst(b.left + R() * b.width, b.top + 4, 1, 'flame', { w: 2, size: .45 });
+        if (R() < .25) burst(b.left + R() * b.width, b.top + 2, 1, 'ember', { w: 2 });
+        if (R() < .1) burst(b.left + R() * b.width, b.top + 4, 1, 'flame', { w: 2, size: .45 });
       }) };
     }
   }, { passive: true });
@@ -143,28 +141,13 @@ export function installIgnite(){
     // wait for the screen to update, then check whether it was switched on
     setTimeout(() => requestAnimationFrame(() => {
       if (t && t.isConnected && isOn(t)) tickFire(t);
-      if (s && s.isConnected && s.getAttribute('aria-pressed') === 'true'){ const [x, y] = mid(s); burst(x, y - 6, 10, 'flame', { w: 50, size: .6 }); burst(x, y, 12, 'ember', { w: 60 }); }
+      if (s && s.isConnected && s.getAttribute('aria-pressed') === 'true'){ const [x, y] = mid(s); burst(x, y - 6, 4, 'flame', { w: 50, size: .5 }); burst(x, y, 4, 'ember', { w: 60 }); }
     }), 0);
   });
 }
 
-/* ---------- Warm slide between tabs ---------- */
-/* Call before the tab changes: the old page is copied and slides away while the new one slides in with a warm leading edge. */
-export function warmSlide(dir){
-  const main = document.querySelector('.main');
-  if (!main || !dir || calm()) return;
-  const r = main.getBoundingClientRect();
-  const old = main.cloneNode(true); old.classList.add('slide-old'); old.setAttribute('aria-hidden', 'true'); old.inert = true;
-  old.style.cssText = `left:${r.left}px;top:${r.top}px;width:${r.width}px`;
-  document.body.appendChild(old);
-  const ease = 'cubic-bezier(.4,0,.2,1)';
-  old.animate([{ transform: 'none', opacity: 1 }, { transform: `translateX(${-dir * 30}%)`, opacity: 0 }], { duration: 340, easing: ease, fill: 'forwards' }).finished.then(() => old.remove());
-  requestAnimationFrame(() => {
-    const g = document.createElement('div'); g.className = 'edgeglow ' + (dir > 0 ? 'l' : 'r'); main.appendChild(g);
-    main.classList.add('sliding');
-    main.animate([{ transform: `translateX(${dir * 100}%)` }, { transform: 'none' }], { duration: 340, easing: ease }).finished.then(() => main.classList.remove('sliding'));
-    g.animate([{ opacity: 1 }, { opacity: 1, offset: .6 }, { opacity: 0 }], { duration: 420, fill: 'forwards' }).finished.then(() => g.remove());
-    const ic = document.querySelector('.tabbar .tab[aria-current="page"] svg, .rail button[aria-current="page"] svg');
-    if (ic && ic.getBoundingClientRect().width){ const [x, y] = mid(ic); burst(x, y - 4, 5, 'ember', { w: 14, size: .8 }); }
-  });
+/* ---------- page change: a plain quick fade (the cards then rise in on their own) ---------- */
+export function pageFade(){
+  if (calm()) return;
+  requestAnimationFrame(() => { const main = document.querySelector('.main'); if (main) main.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 180, easing: 'ease-out' }); });
 }

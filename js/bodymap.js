@@ -24,9 +24,16 @@ export const level = n => n <= 0 ? 0 : n < 6 ? 1 : n < 12 ? 2 : 3;
 export function BodyMap({ sets, height = 200 }){
   const reg = {};
   Object.keys(sets || {}).forEach(m => (MUSCLE_REGIONS[m] || []).forEach(r => { reg[r] = (reg[r] || 0) + sets[m]; }));
-  const fill = m => m === 'head' || m === 'knees' ? 'var(--bm-skin)' : 'var(--bm-' + level(reg[m] || 0) + ')';
-  const fig = (data, label) => html`<svg class="bodymap" style=${'height:' + height + 'px'} viewBox="0 0 1000 2220" role="img" aria-label=${label}>
-    ${data.map(([m, polys]) => polys.map((p, i) => html`<polygon key=${m + i} points=${p} fill=${fill(m)}/>`))}
+  const lv = m => m === 'head' || m === 'knees' ? -1 : level(reg[m] || 0);
+  const fill = m => lv(m) < 0 ? 'var(--bm-skin)' : 'var(--bm-' + lv(m) + ')';
+  /* Heat up: trained muscles light up in order, lightest first, about 30 ms apart; the hardest-trained then glow */
+  const order = FRONT.concat(BACK).flatMap(([m, polys]) => polys.map((p, i) => [m + i, lv(m)])).filter(x => x[1] > 0).sort((a, b) => a[1] - b[1]);
+  const delay = {}; order.forEach(([k], i) => { delay[k] = 150 + i * 30; });
+  const gd = (150 + order.length * 30 + 600) + 'ms';
+  const fig = (data, label, id) => html`<svg class="bodymap" style=${'height:' + height + 'px;overflow:visible'} viewBox="0 0 1000 2220" role="img" aria-label=${label}>
+    <defs><filter id=${'bm-blur-' + id} x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="22"/></filter></defs>
+    <g class="bm-glow" filter=${'url(#bm-blur-' + id + ')'} style=${'--gd:' + gd}>${data.filter(([m]) => lv(m) === 3).map(([m, polys]) => polys.map((p, i) => html`<polygon key=${m + i} points=${p} fill="#FF5A36"/>`))}</g>
+    ${data.map(([m, polys]) => polys.map((p, i) => html`<polygon key=${m + i} points=${p} fill=${fill(m)} class=${lv(m) > 0 ? 'bm-heat' : null} style=${lv(m) > 0 ? '--d:' + delay[m + i] + 'ms' : null}/>`))}
   </svg>`;
-  return html`<div class="bodymaps">${fig(FRONT, 'Front of body')}${fig(BACK, 'Back of body')}</div>`;
+  return html`<div class="bodymaps">${fig(FRONT, 'Front of body', 'f')}${fig(BACK, 'Back of body', 'b')}</div>`;
 }
