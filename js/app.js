@@ -1,13 +1,14 @@
 /* App shell: tabs, Today, Settings, toasts. */
-import { html, useState, useEffect, useRef, Ico, UI, Ring, dayKey, parseKey, weekStartKey, fmtLong, plural, scrollTop, tint } from './lib.js';
+import { html, useState, useEffect, useRef, Ico, UI, Ring, Count, dayKey, parseKey, weekStartKey, fmtLong, plural, scrollTop, tint } from './lib.js';
 import { store, sync, deviceGet, deviceSet } from './store.js';
 import { plannerCtx, PlannerTab, RequiredSheet } from './planner.js';
 import { DietTab, TargetsForm, dayTotals, targetsFor, kc, g1 } from './diet.js';
 import { GymTab, WorkoutBar, workoutsList, SOUNDS, playSound } from './gym.js';
 import { AssistantButton, AssistantChat } from './assistant.js';
 import { AI_MODELS, aiModel, claude, aiError } from './claude.js';
+import { warmSlide } from './fx.js';
 
-export const VERSION = '1.25';
+export const VERSION = '1.26';
 const TABS = [['today', 'Today', UI.sun], ['planner', 'Planner', UI.grid], ['diet', 'Diet', UI.diet], ['gym', 'Gym', UI.gym], ['settings', 'Settings', UI.gear]];
 const ALL_TABS = TABS.map(t => t[0]);
 
@@ -39,6 +40,7 @@ export function App(){
   };
   const setUi = patch => setUiState(s => Object.assign({}, s, patch));
   const go = t => {
+    if (t !== tab) warmSlide(Math.sign(ALL_TABS.indexOf(t) - ALL_TABS.indexOf(tab)));
     setTab(t);
     if (t === 'planner') setUi({ edit: null });
     if (t === 'diet') setUi({ dedit: null });
@@ -134,7 +136,7 @@ function TodayView({ app }){
           ${ring(nDone, items.length, 'var(--ring-plan)', planToday ? html`<span class="tc-big">${nDone}/${items.length}</span><span class="tc-small">done</span>` : html`<span class="tc-big">–</span><span class="tc-small">no plan</span>`)}
           <div class="tc-side">
             ${planToday
-              ? html`<div class="tc-dots">${items.map(it => html`<span key=${it.id} class=${'tc-dot' + (done.has(it.id) ? ' on' : '')} style=${'--t:' + tint(it.color)}>${done.has(it.id) && html`<${Ico} d=${UI.check} size=${11} sw=${3.4}/>`}</span>`)}</div>
+              ? html`<div class="tc-dots">${items.map(it => html`<span key=${it.id} class=${'tc-dot' + (done.has(it.id) ? ' on' : '')} style=${'--t:' + tint(it.color) + ';--i:' + items.indexOf(it)}>${done.has(it.id) && html`<${Ico} d=${UI.check} size=${11} sw=${3.4}/>`}</span>`)}</div>
                      <div class="tc-line">${next ? html`Next up · <b>${next.name}</b>${next.duration ? ' · ' + next.duration : ''}` : 'All done for today'}</div>`
               : html`<div class="tc-line">No plan for today yet. Tap to plan your day.</div>`}
           </div>
@@ -144,7 +146,7 @@ function TodayView({ app }){
       <button class="tcard" onClick=${() => go('diet')}>
         ${head('Diet', tg.kcal ? (tg.kcal - tot.kcal >= 0 ? kc(tg.kcal - tot.kcal) + ' kcal left' : kc(tot.kcal - tg.kcal) + ' kcal over') : '')}
         <div class="tc-body">
-          ${ring(tot.kcal, tg.kcal, 'var(--ring-kcal)', html`<span class="tc-big">${kc(tot.kcal)}</span><span class="tc-small">${tg.kcal ? 'of ' + kc(tg.kcal) : 'kcal'}</span>`)}
+          ${ring(tot.kcal, tg.kcal, 'var(--ring-kcal)', html`<span class="tc-big"><${Count} n=${Math.round(tot.kcal)}/></span><span class="tc-small">${tg.kcal ? 'of ' + kc(tg.kcal) : 'kcal'}</span>`)}
           <div class="tc-side">
             ${tg.kcal || tg.p
               ? html`<div class="tc-macros">${macro('Protein', tot.p, tg.p, 'var(--m-p)')}${macro('Carbs', tot.c, tg.c, 'var(--m-c)')}${macro('Fat', tot.fat, tg.fat, 'var(--m-f)')}</div>`
@@ -159,7 +161,7 @@ function TodayView({ app }){
           ${ring(w ? 1 : 0, 1, 'var(--ring-gym)', w ? html`<span style="color:var(--ring-gym)"><${Ico} d=${UI.check} size=${26} sw=${3}/></span><span class="tc-small">done</span>` : html`<span class="tc-big">–</span><span class="tc-small">not yet</span>`)}
           <div class="tc-side">
             ${w ? html`<div class="tc-title">${w.name || 'Workout'} <span>· ${mins ? mins + ' min · ' : ''}${plural(nSets, 'set', 'sets')}</span></div>` : html`<div class="tc-line">No workout yet today.</div>`}
-            <div class="tc-week">${days.map(d => html`<span key=${d} class=${'tc-day' + (all.some(x => x.date === d) ? ' on' : '') + (d === today ? ' today' : '')}><i></i>${parseKey(d).toLocaleDateString(undefined, { weekday: 'narrow' })}</span>`)}</div>
+            <div class="tc-week">${days.map(d => html`<span key=${d} style=${'--i:' + days.indexOf(d)} class=${'tc-day' + (all.some(x => x.date === d) ? ' on' : '') + (d === today ? ' today' : '')}><i></i>${parseKey(d).toLocaleDateString(undefined, { weekday: 'narrow' })}</span>`)}</div>
           </div>
         </div>
       </button>

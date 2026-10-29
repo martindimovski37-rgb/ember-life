@@ -17,10 +17,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&display=swap">
+<script>/* apply the saved theme before the opening screen paints */ document.documentElement.classList.add('splashing'); try { var t = ((JSON.parse(localStorage.getItem('ember-life-v1') || '{}')['settings/app'] || {}).v || {}).theme; if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e){} setTimeout(function(){ var s = document.getElementById('splash'); if (s) s.remove(); document.documentElement.classList.remove('splashing'); }, 6000); /* never stuck behind the opening screen */</script>
 <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
-<div id="app"><p class="boot">Loading Ember Life…</p></div>
+<div id="splash" aria-hidden="true"><div class="sp-logo"><svg viewBox="0 0 150 150"><rect class="tile" width="150" height="150" rx="34"/><g transform="translate(6,6) scale(0.92)"><circle class="glow" cx="75" cy="76" r="38"/><path class="arc arc1" pathLength="100" d="M81.96,26.49 A50,50 0 0 1 121.36,94.73"/><path class="arc arc2" pathLength="100" d="M114.40,106.78 A50,50 0 0 1 35.60,106.78"/><path class="arc arc3" pathLength="100" d="M28.64,94.73 A50,50 0 0 1 68.04,26.49"/><g class="flame"><g transform="translate(0,20)"><path class="f1" d="M75,12 C84,26 97,38 97,57 C97,72 87,83 75,84 C63,83 53,72 53,57 C53,47 57,40 62,33 C62,41 64,47 68,50 C66,37 70,24 75,12 Z"/><path class="f2" d="M76,34 C83,45 89,53 89,64 C89,74 83,80 75,80 C67,80 61,74 61,65 C61,59 64,54 67,50 C67,56 69,60 72,61 C70,52 72,43 76,34 Z"/><path class="f3" d="M75,55 C79,61 82,66 82,71 C82,76 79,79 75,79 C71,79 68,76 68,71 C68,66 71,61 75,55 Z"/></g></g></g></svg></div><div class="sp-word"><span style="--i:0">E</span><span style="--i:1">m</span><span style="--i:2">b</span><span style="--i:3">e</span><span style="--i:4">r</span><span style="--i:5">&nbsp;</span><span style="--i:6">L</span><span style="--i:7">i</span><span style="--i:8">f</span><span style="--i:9">e</span></div></div>
+<div id="app"></div>
 <script src="vendor/preact-htm.umd.js"></script>
 <script type="module" src="js/main.js"></script>
 </body>

@@ -1,4 +1,5 @@
 /* Shared building blocks: Preact + htm, icons, colors, dates. */
+import { afterSplash } from './fx.js';
 export const { html, render, useState, useEffect, useRef, useMemo, useCallback } = window.htmPreact;
 
 /* ---------- Category palette & icons (kept from Day Planner so saved plans keep their look) ---------- */
@@ -89,10 +90,30 @@ export const scrollTop = () => { try { window.scrollTo(0, 0); } catch (e){} };
 export function Ring({ value, max, color, size = 68, stroke = 8, children }){
   const r = (size - stroke) / 2, c = 2 * Math.PI * r;
   const p = max > 0 ? Math.max(0, Math.min(1, value / max)) : 0;
-  return html`<svg width=${size} height=${size} viewBox=${'0 0 ' + size + ' ' + size} aria-hidden="true">
+  return html`<svg class="ring-svg" width=${size} height=${size} viewBox=${'0 0 ' + size + ' ' + size} aria-hidden="true">
     <circle cx=${size / 2} cy=${size / 2} r=${r} fill="none" stroke="var(--track)" stroke-width=${stroke}/>
     ${p > 0 && html`<circle cx=${size / 2} cy=${size / 2} r=${r} fill="none" stroke=${color} stroke-width=${stroke} stroke-linecap="round"
-      stroke-dasharray=${(c * p).toFixed(1) + ' ' + c.toFixed(1)} transform=${'rotate(-90 ' + size / 2 + ' ' + size / 2 + ')'}/>`}
+      class="ring-v" style=${'--c:' + c.toFixed(1)} stroke-dasharray=${(c * p).toFixed(1) + ' ' + c.toFixed(1)} transform=${'rotate(-90 ' + size / 2 + ' ' + size / 2 + ')'}/>`}
     ${children}
   </svg>`;
+}
+
+/* A number that counts up from 0 when it first appears (after the opening screen), then just follows its value */
+export function Count({ n }){
+  const [shown, setShown] = useState(() => matchMedia('(prefers-reduced-motion: reduce)').matches ? n : 0);
+  const first = useRef(true);
+  useEffect(() => {
+    if (!first.current){ setShown(n); return; }
+    first.current = false;
+    if (shown === n) return;
+    let raf, alive = true;
+    afterSplash(() => {
+      if (!alive) return;
+      const t0 = performance.now();
+      const step = t => { const k = Math.min(1, Math.max(0, (t - t0 - 150) / 1300)); setShown(Math.round(n * (1 - Math.pow(1 - k, 3)))); if (k < 1) raf = requestAnimationFrame(step); };
+      raf = requestAnimationFrame(step);
+    });
+    return () => { alive = false; cancelAnimationFrame(raf); };
+  }, [n]);
+  return html`<span class="num-heat">${shown}</span>`;
 }

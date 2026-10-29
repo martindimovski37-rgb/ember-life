@@ -1,9 +1,12 @@
 import { html, render } from './lib.js';
 import { App } from './app.js';
+import { endSplash, installIgnite } from './fx.js';
 
 const root = document.getElementById('app');
 root.textContent = '';
 render(html`<${App}/>`, root);
+endSplash();
+installIgnite();
 
 /* iPhone ignores "no zoom" in the page settings, so block pinch-zoom gestures directly */
 ['gesturestart', 'gesturechange'].forEach(t => document.addEventListener(t, e => e.preventDefault(), { passive: false }));

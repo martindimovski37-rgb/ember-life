@@ -673,3 +673,80 @@ b,.stype,.link,.left,.goal-t,.streak,.wbar,.kcal-n{font-weight:650}
 .goal.slim .goal-t{font-size:13px; font-weight:400}
 .goal.slim::before{content:""; width:7px; height:7px; flex:none; border-radius:50%; background:var(--muted)}
 .goal-bulk.slim::before{background:var(--good)} .goal-cut.slim::before{background:var(--warn)}
+
+/* ---------- Motion: opening screen, Ignite presses, Warm slide, Furnace numbers ---------- */
+:root{ --lg-bg:#7E0E16; --lg-glow:#8E1A22; --lg-a1:#FFFFFF; --lg-a2:#F2CDD0; --lg-a3:#FFD27A; --lg-f1:#FF5A36; --lg-f2:#FF9A4D; --lg-f3:#FFD27A; --hot1:#FFB020; --hot2:#FF7A2E }
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){ --lg-bg:#121111; --lg-glow:#1C1918; --lg-a1:#E0303A; --lg-a2:#B3171F; --lg-a3:#FFC07A; --lg-f1:#E0303A; --lg-f2:#FF6A3D; --lg-f3:#FFC07A; --hot1:#FFF1C2; --hot2:#FFB347 } }
+:root[data-theme="dark"]{ --lg-bg:#121111; --lg-glow:#1C1918; --lg-a1:#E0303A; --lg-a2:#B3171F; --lg-a3:#FFC07A; --lg-f1:#E0303A; --lg-f2:#FF6A3D; --lg-f3:#FFC07A; --hot1:#FFF1C2; --hot2:#FFB347 }
+body{overflow-x:clip}
+
+/* opening screen: the tile pops in, the three rings draw, the flame grows */
+#splash{position:fixed; inset:0; z-index:100; background:var(--bg); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; pointer-events:none}
+#splash.gone{animation:sp-out .45s ease-in forwards}
+.sp-logo{width:96px; height:96px}
+.sp-logo svg{width:100%; height:100%; display:block}
+.sp-logo .tile{fill:var(--lg-bg); transform-origin:75px 75px; transform:scale(.6); opacity:0; animation:sp-tile .45s cubic-bezier(.2,.8,.2,1) forwards}
+.sp-logo .glow{fill:var(--lg-glow)}
+.sp-logo .arc{fill:none; stroke-width:11; stroke-linecap:round; stroke-dasharray:100; stroke-dashoffset:100; animation:sp-draw .55s cubic-bezier(.4,0,.2,1) forwards}
+.sp-logo .arc1{stroke:var(--lg-a1); animation-delay:.3s} .sp-logo .arc2{stroke:var(--lg-a2); animation-delay:.48s} .sp-logo .arc3{stroke:var(--lg-a3); animation-delay:.66s}
+.sp-logo .flame{transform-origin:75px 104px; transform:scaleY(0); animation:sp-grow .6s .9s cubic-bezier(.3,1.5,.5,1) forwards, sp-flicker 1.2s 1.5s ease-in-out infinite}
+.sp-logo .f1{fill:var(--lg-f1)} .sp-logo .f2{fill:var(--lg-f2)} .sp-logo .f3{fill:var(--lg-f3)}
+.sp-word{display:flex; font-family:var(--font); font-size:20px; font-weight:700; letter-spacing:-.01em; color:var(--fg)}
+.sp-word span{display:inline-block; animation:sp-rise .5s cubic-bezier(.2,.8,.2,1) both; animation-delay:calc(1.15s + var(--i) * 30ms)}
+@keyframes sp-tile{to{transform:scale(1); opacity:1}}
+@keyframes sp-draw{to{stroke-dashoffset:0}}
+@keyframes sp-grow{to{transform:scaleY(1)}}
+@keyframes sp-flicker{0%,100%{transform:scaleY(1) scaleX(1)} 50%{transform:scaleY(1.06) scaleX(.97)}}
+@keyframes sp-rise{from{opacity:0; transform:translateY(10px)} to{opacity:1; transform:none}}
+@keyframes sp-out{to{opacity:0; transform:scale(1.04)}}
+/* page animations wait behind the opening screen, then the Today cards rise in one by one */
+.splashing .main,.splashing .main *{animation-play-state:paused !important}
+.intro .head h1,.intro .tcard{animation:cardin .5s cubic-bezier(.2,.8,.2,1) backwards}
+.intro .tcard:nth-child(1){animation-delay:70ms} .intro .tcard:nth-child(2){animation-delay:140ms} .intro .tcard:nth-child(3){animation-delay:210ms}
+@keyframes cardin{from{opacity:0; transform:translateY(14px)}}
+
+/* fire layer (sparks, embers, flames are drawn by js/fx.js) */
+.fx-layer{position:fixed; left:0; top:0; width:100%; height:100%; pointer-events:none; z-index:90}
+.fx-flash{position:fixed; inset:0; z-index:89; pointer-events:none; opacity:0; background:radial-gradient(circle at var(--fx) var(--fy), rgba(255,214,140,.9), rgba(255,90,54,.4) 28%, rgba(226,56,26,0) 62%)}
+.fx-ring{position:fixed; z-index:89; pointer-events:none; width:var(--s); height:var(--s); border-radius:50%; transform:translate(-50%,-50%); background:conic-gradient(from 0deg, #FFE2A0, #FF9A4D, #FF5A36, #B91C1C, rgba(185,28,28,0) 75%); -webkit-mask:radial-gradient(circle, transparent 52%, #000 56%); mask:radial-gradient(circle, transparent 52%, #000 56%)}
+
+/* Ignite: hold a main button and fire fills it from the bottom; let go and it blasts */
+.btn-solid,.btn-pop,.bigbtn{position:relative; overflow:hidden; isolation:isolate; transition:transform .45s cubic-bezier(.34,1.56,.64,1), box-shadow .3s}
+.btn-solid::before,.btn-pop::before,.bigbtn::before{content:""; position:absolute; left:0; right:0; bottom:0; height:0; z-index:-1; pointer-events:none; background:linear-gradient(to top, #FFE2A0, #FFB347 25%, #FF6A2A 60%, rgba(255,90,54,0)); transition:height .3s ease-out}
+.ig-hold{transform:scale(.97); box-shadow:0 0 26px rgba(255,90,54,.65) !important; text-shadow:0 1px 2px rgba(110,10,0,.45)}
+.ig-hold::before{height:150%; transition:height .9s cubic-bezier(.3,0,.4,1)}
+.ig-blast{animation:ig-blast .5s ease-out}
+@keyframes ig-blast{0%{filter:brightness(1.9) saturate(1.3); transform:scale(1.04)} 100%{filter:none; transform:none}}
+.btn-ghost{transition:box-shadow .25s, color .25s, transform .4s cubic-bezier(.34,1.56,.64,1)}
+.btn-ghost.ig-lit{transform:scale(.97); color:var(--link); box-shadow:inset 0 0 0 1.5px #FF5A36, 0 0 18px rgba(255,90,54,.55)}
+
+/* Warm slide: pages slide in tab order; the incoming page's leading edge glows */
+.main.sliding{position:relative; z-index:2}
+.slide-old{position:fixed; z-index:1; margin:0; pointer-events:none}
+.slide-old *,.slide-old *::before,.slide-old *::after{animation:none !important}
+.edgeglow{position:absolute; top:0; bottom:0; width:28px; pointer-events:none; filter:blur(5px)}
+.edgeglow.l{left:-8px; background:linear-gradient(90deg, rgba(255,110,55,.6), rgba(255,110,55,0))}
+.edgeglow.r{right:-8px; background:linear-gradient(270deg, rgba(255,110,55,.6), rgba(255,110,55,0))}
+
+/* Furnace: rings, numbers and dots start white-hot and cool to their colour, then keep a slow glow; heat runs through the bars */
+.ring-v{animation:ring-sweep 1.3s .15s cubic-bezier(.2,.8,.2,1) backwards, ring-cool 1.9s .15s ease-out backwards}
+.tcard:nth-child(2) .ring-v{animation-delay:.31s} .tcard:nth-child(3) .ring-v{animation-delay:.47s}
+@keyframes ring-sweep{from{stroke-dasharray:0 var(--c)}}
+@keyframes ring-cool{0%,35%{stroke:var(--hot1)} 65%{stroke:var(--hot2)}}
+.ring-svg{animation:ring-halo 2.6s 1.8s ease-in-out infinite}
+@keyframes ring-halo{0%,100%{filter:drop-shadow(0 0 2px rgba(255,90,54,.3))} 50%{filter:drop-shadow(0 0 8px rgba(255,90,54,.9))}}
+.num-heat{animation:num-heat 1.8s .15s ease-out backwards}
+@keyframes num-heat{0%{color:var(--hot1); text-shadow:0 0 10px var(--hot2)} 70%{color:var(--hot2); text-shadow:0 0 6px rgba(255,90,54,.6)}}
+.tc-bar i,.bar-fill{position:relative; overflow:hidden; animation:bar-grow .95s .35s cubic-bezier(.2,.8,.2,1) backwards}
+.tc-m:nth-child(2) .tc-bar i{animation-delay:.48s} .tc-m:nth-child(3) .tc-bar i{animation-delay:.61s}
+@keyframes bar-grow{from{width:0}}
+.tc-bar i::after,.bar-fill::after{content:""; position:absolute; top:0; bottom:0; left:0; width:45%; background:linear-gradient(90deg, transparent, rgba(255,244,214,.9), transparent); transform:translateX(-120%); animation:bar-shimmer 2s 1.4s ease-in-out infinite}
+@keyframes bar-shimmer{60%,100%{transform:translateX(330%)}}
+.tc-dot.on,.tc-day.on i{animation:dot-fire 1.1s backwards; animation-delay:calc(1.1s + var(--i, 0) * 80ms)}
+@keyframes dot-fire{0%{transform:scale(0); background:var(--hot1); box-shadow:0 0 14px 4px var(--hot2)} 40%{transform:scale(1.2)} 100%{transform:none}}
+
+@media (prefers-reduced-motion: reduce){
+  #splash{display:none}
+  .ring-v,.ring-svg,.num-heat,.tc-bar i,.bar-fill,.tc-dot.on,.tc-day.on i,.intro .tcard,.intro .head h1{animation:none !important}
+  .tc-bar i::after,.bar-fill::after,.btn-solid::before,.btn-pop::before,.bigbtn::before{display:none}
+}
