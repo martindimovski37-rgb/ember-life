@@ -305,7 +305,7 @@ function boxingBell(ctx){
   const comp = ctx.createDynamicsCompressor(), master = ctx.createGain();
   comp.threshold.value = -12; comp.ratio.value = 6; master.gain.value = 0.7;
   comp.connect(master); master.connect(ctx.destination);
-  [0, 0.3, 0.6].forEach(t => bellStrike(ctx, comp, t, 1180, 0.45));
+  [0, 0.3].forEach(t => bellStrike(ctx, comp, t, 1180, 0.45));
 }
 function synth(ctx, kind){
   if (kind === 'beep') [0, 0.3, 0.6].forEach(t => tone(ctx, t, 880, 0.18, { type: 'square', vol: 0.18 }));
