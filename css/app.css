@@ -15,25 +15,25 @@
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
-    --bg:#000000; --card:#1C1C1E; --card-line:transparent; --inset:#2A2A2D; --fg:#F2F2F3; --muted:#A1A1A8; --line:#3A3A3F; --dash:#46464C; --btn-line:#3A3A3F; --add-line:#3A3A3F;
+    --bg:#000000; --card:#1C1C1E; --card-line:#333338; --inset:#2A2A2D; --fg:#F2F2F3; --muted:#A1A1A8; --line:#3C3C42; --dash:#46464C; --btn-line:#3C3C42; --add-line:#3C3C42;
     --accent:#E0402A; --on-accent:#FFFFFF; --grad:linear-gradient(135deg, #C22E17, #760D08); --pop:#E8452A; --on-pop:#FFFFFF; --gold:#F2763A;
-    --ring-kcal:#E8452A; --ring-protein:#E04A3A; --ring-gym:#D8322A; --ring-plan:#F2763A; --track:#333337;
+    --ring-kcal:#E8452A; --ring-protein:#E04A3A; --ring-gym:#D8322A; --ring-plan:#F2763A; --track:#36363B;
     --link:#F05A3C; --good:#6FCF73; --danger:#FF6B6B; --danger-soft:#3A1A1A; --scrim:rgba(0,0,0,.6);
     --shadow:0 8px 24px rgba(0,0,0,.6); --soft-amt:18%; --ink-amt:45%;
     --m-p:#E04A3A; --m-c:#F2763A; --m-f:#F7B03A; --ok-bg:#16301E; --ok-fg:#8FD9A8; --vio-bg:#1A1A1D; --vio-fg:#C7C7CC; --amb-bg:#3A2A10; --amb-fg:#FFC97A; --warn:#FFC97A; --warn-bg:#33260F;
-    --bm-0:#333337; --bm-1:#5C1A1A; --bm-2:#C21C1C; --bm-3:#FF4D45; --bm-skin:#3A3A3F;
+    --bm-0:#36363B; --bm-1:#5C1A1A; --bm-2:#C21C1C; --bm-3:#FF4D45; --bm-skin:#3A3A3F;
     --c-wine:#C0302A; --c-scarlet:#E04A3A; --c-flame:#E8452A; --c-rust:#E0603A; --c-tangerine:#F2763A; --c-amber:#F7B03A; --c-ochre:#D69E2E; --c-graphite:#A1A1AA;
     color-scheme:dark;
   }
 }
 :root[data-theme="dark"]{
-    --bg:#000000; --card:#1C1C1E; --card-line:transparent; --inset:#2A2A2D; --fg:#F2F2F3; --muted:#A1A1A8; --line:#3A3A3F; --dash:#46464C; --btn-line:#3A3A3F; --add-line:#3A3A3F;
+    --bg:#000000; --card:#1C1C1E; --card-line:#333338; --inset:#2A2A2D; --fg:#F2F2F3; --muted:#A1A1A8; --line:#3C3C42; --dash:#46464C; --btn-line:#3C3C42; --add-line:#3C3C42;
     --accent:#E0402A; --on-accent:#FFFFFF; --grad:linear-gradient(135deg, #C22E17, #760D08); --pop:#E8452A; --on-pop:#FFFFFF; --gold:#F2763A;
-    --ring-kcal:#E8452A; --ring-protein:#E04A3A; --ring-gym:#D8322A; --ring-plan:#F2763A; --track:#333337;
+    --ring-kcal:#E8452A; --ring-protein:#E04A3A; --ring-gym:#D8322A; --ring-plan:#F2763A; --track:#36363B;
     --link:#F05A3C; --good:#6FCF73; --danger:#FF6B6B; --danger-soft:#3A1A1A; --scrim:rgba(0,0,0,.6);
     --shadow:0 8px 24px rgba(0,0,0,.6); --soft-amt:18%; --ink-amt:45%;
     --m-p:#E04A3A; --m-c:#F2763A; --m-f:#F7B03A; --ok-bg:#16301E; --ok-fg:#8FD9A8; --vio-bg:#1A1A1D; --vio-fg:#C7C7CC; --amb-bg:#3A2A10; --amb-fg:#FFC97A; --warn:#FFC97A; --warn-bg:#33260F;
-    --bm-0:#333337; --bm-1:#5C1A1A; --bm-2:#C21C1C; --bm-3:#FF4D45; --bm-skin:#3A3A3F;
+    --bm-0:#36363B; --bm-1:#5C1A1A; --bm-2:#C21C1C; --bm-3:#FF4D45; --bm-skin:#3A3A3F;
     --c-wine:#C0302A; --c-scarlet:#E04A3A; --c-flame:#E8452A; --c-rust:#E0603A; --c-tangerine:#F2763A; --c-amber:#F7B03A; --c-ochre:#D69E2E; --c-graphite:#A1A1AA;
     color-scheme:dark;
 }
