@@ -13,18 +13,24 @@ const load = kind => loading || (loading = KokoroTTS.from_pretrained(MODEL, {
   progress_callback: p => { if (p.status === 'progress' && p.total > 1e6) postMessage({ type: 'progress', file: p.file, loaded: p.loaded, total: p.total }); }
 }).then(t => { tts = t; return t; }, e => { loading = null; throw e; }));
 
-/* one message at a time, in order, so sentences come back in the order they were asked for */
-let chain = Promise.resolve();
+/* one message at a time, in order, so sentences come back in the order they were asked for.
+   'cancel' skips every sentence asked for up to then (an answer that was dropped), right away. */
+let chain = Promise.resolve(), dropUpTo = 0;
 onmessage = e => {
   const m = e.data;
+  if (m.type === 'cancel'){ dropUpTo = Math.max(dropUpTo, m.upTo); return; }
   chain = chain.then(async () => {
+    await new Promise(r => setTimeout(r, 0));   // let a waiting 'cancel' message in before starting the next sentence
+    if (m.type === 'speak' && m.id <= dropUpTo){ postMessage({ type: 'error', id: m.id, error: 'cancelled' }); return; }
     try {
       if (m.type === 'load'){ await load(m.kind); postMessage({ type: 'ready', id: m.id }); }
       if (m.type === 'speak'){
         await load(m.kind);
+        const t0 = performance.now();
         const out = await tts.generate(m.text, { voice: m.voice, speed: m.speed || 1 });
+        const work = performance.now() - t0;
         if (Number.isNaN(out.audio[out.audio.length >> 1]) || Number.isNaN(out.audio[0])) throw new Error('bad-audio');
-        postMessage({ type: 'audio', id: m.id, audio: out.audio, rate: out.sampling_rate }, [out.audio.buffer]);
+        postMessage({ type: 'audio', id: m.id, audio: out.audio, rate: out.sampling_rate, work }, [out.audio.buffer]);
       }
     } catch (err){ postMessage({ type: 'error', id: m.id, error: String(err && err.message || err) }); }
   });

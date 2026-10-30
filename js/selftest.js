@@ -15,6 +15,7 @@ function speakTimed(text, log, t0){
   return new Promise(done => {
     let quietTimer = 0;
     const m = createMouth({
+      preview: true,
       onTrace: (ev, d) => {
         const at = s1(performance.now() - t0);
         if (ev === 'made') log(`  ${at}  made ${d.sec.toFixed(1)} s of speech in ${s1(d.ms)}`);

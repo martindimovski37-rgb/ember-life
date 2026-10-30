@@ -61,6 +61,8 @@ export function loadVoice(onProgress, want){
 /* text to sound: resolves with { audio: Float32Array, rate } */
 export const kokoroSpeak = (text, voice) => loadVoice().then(() => ask({ type: 'speak', text, voice, kind }))
   .catch(e => { if (kind === 'gpu' && /bad-audio|webgpu|GPU/i.test(e.message)){ dropGpu(); return loadVoice(null, 'cpu').then(() => ask({ type: 'speak', text, voice, kind })); } throw e; });
+/* drop every sentence still waiting to be made (the answer they belonged to was dropped) */
+export function cancelSpeech(){ if (worker) worker.postMessage({ type: 'cancel', upTo: nextId - 1 }); }
 export const voiceLoaded = () => ready;
 export const voiceKind = () => kind;
 

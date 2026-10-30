@@ -10,7 +10,7 @@ import { voiceDownloaded, loadVoice, removeVoice, downloadedKind, bestKind, down
 import { AI_MODELS, aiModel, claude, aiError } from './claude.js';
 import { pageFade } from './fx.js';
 
-export const VERSION = '1.34';
+export const VERSION = '1.35';
 const TABS = [['today', 'Today', UI.sun], ['planner', 'Planner', UI.grid], ['diet', 'Diet', UI.diet], ['gym', 'Gym', UI.gym], ['ember', 'Ember', UI.spark], ['settings', 'Settings', UI.gear]];
 const ALL_TABS = TABS.map(t => t[0]);
 
@@ -201,7 +201,7 @@ function VoiceCard({ settings }){
     unlockAudio(); store.set('settings/app', Object.assign({}, settings, { emberVoice: id }));
     setHeard('');
     sampler && sampler.stop();
-    sampler = createMouth({ onEngine: setHeard });
+    sampler = createMouth({ onEngine: setHeard, preview: true });
     setTimeout(() => sampler.say('Hi, I’m Ember. What did you eat today?'), 50);
   };
   const row = ([id, name, sub]) => { const on = cur === id; return html`<button key=${id} class="act-pick" aria-pressed=${String(on)} onClick=${() => pick(id)}>

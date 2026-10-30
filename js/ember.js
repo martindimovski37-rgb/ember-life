@@ -1,7 +1,7 @@
 /* The Ember tab: the glowing orb you talk to, with subtitles, and a chat panel that keeps the whole conversation. */
 import { html, useState, useEffect, useRef, Ico, UI } from './lib.js';
 import { askEmber, emberChat, actionLine, md, photoData } from './assistant.js';
-import { createMouth, createEars, unlockAudio, canListen } from './voice.js';
+import { createMouth, createEars, createBargeIn, unlockAudio, canListen, elog, emberLog, watchLog } from './voice.js';
 import { loadThree, getOrb } from './orb.js';
 import { claude } from './claude.js';
 import { voiceDownloaded, loadVoice } from './kokoro.js';
@@ -23,7 +23,9 @@ export function EmberView(){
   const [photos, setPhotos] = useState([]);
   const [noGL, setNoGL] = useState(false);
   const [needTap, setNeedTap] = useState(false);   // iPhone wants a tap before Ember can carry on
-  const holder = useRef(null), orb = useRef(null), mouth = useRef(null), ears = useRef(null), stopAsk = useRef(null), logEnd = useRef(null), fileRef = useRef(null);
+  const [showLog, setShowLog] = useState(false);
+  const [, setLogTick] = useState(0);
+  const holder = useRef(null), orb = useRef(null), mouth = useRef(null), ears = useRef(null), barge = useRef(null), turnNo = useRef(0), stopAsk = useRef(null), logEnd = useRef(null), fileRef = useRef(null);
   const st = useRef({ listening: false, busy: false });
   st.current.listening = listening; st.current.busy = busy;
 
@@ -36,11 +38,16 @@ export function EmberView(){
   useEffect(() => {
     let dead = false;
     mouth.current = createMouth({
-      onSpeaking: on => { if (on){ ears.current && ears.current.hold(true); setPhase('speak'); } else settle(); },
+      gate: () => ears.current ? ears.current.released() : Promise.resolve(),   // the mic is fully off before Ember speaks
+      onSpeaking: on => {
+        if (on){ ears.current && ears.current.hold(true); setPhase('speak'); if (st.current.listening) barge.current.arm(); }   // while it talks, listen for you talking over it
+        else { barge.current.disarm(); settle(); }
+      },
       onPiece: t => setSub({ who: 'ember', text: t }),   // the subtitle is always the piece being spoken right now
       onError: m => setErr(m),
       onBlocked: () => { setNeedTap(true); setSub({ who: 'hint', text: 'Tap anywhere so Ember can talk' }); }
     });
+    barge.current = createBargeIn({ onVoice: () => interrupt() });
     ears.current = createEars({
       onWords: w => { if (w) setSub({ who: 'you', text: w }); },
       onHeard: w => ask(w, true),
@@ -59,7 +66,8 @@ export function EmberView(){
         o.setState(phase0()); o.setChat(false); o.resume();
       } catch (e){ setNoGL(true); }
     }).catch(() => setNoGL(true));
-    return () => { dead = true; if (orb.current){ orb.current.pause(); orb.current.canvas.remove(); } mouth.current.stop(); ears.current.stop(); stopAsk.current && stopAsk.current(); };
+    const unwatch = watchLog(() => setLogTick(n => n + 1));
+    return () => { dead = true; unwatch(); if (orb.current){ orb.current.pause(); orb.current.canvas.remove(); } barge.current.disarm(); mouth.current.stop(); ears.current.stop(); stopAsk.current && stopAsk.current(); };
   }, []);
   /* the orb reads the phase every frame, so keep the latest one where it can see it */
   const phaseRef = useRef(phase); phaseRef.current = phase; const phase0 = () => phaseRef.current;
@@ -67,31 +75,49 @@ export function EmberView(){
   useEffect(() => { orb.current && orb.current.setChat(chatOpen); if (chatOpen) setTimeout(() => logEnd.current && logEnd.current.scrollIntoView({ block: 'end' }), 60); }, [chatOpen]);
   useEffect(() => { chatOpen && logEnd.current && logEnd.current.scrollIntoView({ block: 'end' }); }, [chat, live]);
 
+  /* one question = one turn. A newer question always wins: the older answer is stopped, in text and in speech,
+     so Ember is never a question behind. */
   const ask = async (q, spoken) => {
-    if (st.current.busy) return;
+    const my = ++turnNo.current, mine = () => my === turnNo.current;
+    if (stopAsk.current){ elog('— newer question: dropping the previous answer'); stopAsk.current(); stopAsk.current = null; }
+    mouth.current.turn();
     setErr(''); setBusy(true); st.current.busy = true;
     ears.current.hold(true); setPhase('think');
-    if (spoken) setSub({ who: 'you', text: q });
+    setSub(spoken ? { who: 'you', text: q } : { who: '', text: '' });
     const pics = photos; setPhotos([]);
+    const t0 = performance.now(); let first = 0;
+    elog((spoken ? 'asks (spoken): “' : 'asks (typed): “') + q.slice(0, 60) + '”');
     try {
       await askEmber({
         text: q, photos: pics, spoken,
-        say: words => { if (spoken) mouth.current.say(words); },
-        live: setLive, changed: setChat, onStop: f => { stopAsk.current = f; }
+        say: words => { if (!mine()) return; if (!first){ first = performance.now(); elog(`reply: first sentence after ${((first - t0) / 1000).toFixed(1)}s`); } if (spoken) mouth.current.say(words); },
+        live: t => { if (mine()) setLive(t); }, changed: c => { if (mine()) setChat(c); else setChat(emberChat.load()); }, onStop: f => { if (mine()) stopAsk.current = f; }
       });
-    } catch (e){ setErr(e.message); if (spoken) mouth.current.say(e.message); }
-    finally { setBusy(false); st.current.busy = false; setLive(''); stopAsk.current = null; settle(); }
+      if (mine()) elog(`reply: finished writing after ${((performance.now() - t0) / 1000).toFixed(1)}s`);
+    } catch (e){ if (mine()){ elog('reply error: ' + e.message); setErr(e.message); if (spoken) mouth.current.say(e.message); } }
+    finally { if (mine()){ setBusy(false); st.current.busy = false; setLive(''); stopAsk.current = null; settle(); } }
+  };
+  /* you cut Ember off (by talking over it or tapping): it stops at once and listens */
+  const interrupt = () => {
+    turnNo.current++;
+    if (stopAsk.current){ stopAsk.current(); stopAsk.current = null; }
+    mouth.current.stop(); barge.current.disarm();
+    setBusy(false); st.current.busy = false; setLive(''); setSub({ who: '', text: '' });
+    elog('interrupted: listening again');
+    if (st.current.listening){ ears.current.hold(false); setPhase('listen'); } else setPhase('idle');
   };
 
   const toggleMic = () => {
     unlockAudio(); mouth.current.unblock(); setNeedTap(false);
-    if (listening){ setListening(false); ears.current.stop(); if (!busy && !mouth.current.busy()) setPhase('idle'); setSub({ who: '', text: '' }); return; }
+    if (listening){ setListening(false); barge.current.disarm(); ears.current.stop(); if (!busy && !mouth.current.busy()) setPhase('idle'); setSub({ who: '', text: '' }); return; }
     if (!canListen()){ setErr('Talking isn’t available in this browser. You can type to Ember in the chat.'); setChatOpen(true); return; }
     setErr(''); setListening(true); ears.current.start(); if (!busy && !mouth.current.busy()) setPhase('listen');
   };
-  /* one tap anywhere on the screen, when iPhone asked for it, carries the conversation on */
+  /* one tap anywhere on the screen: cuts Ember off while it's answering, or carries on when iPhone asked for a tap */
   const tapToGo = e => {
-    if (!needTap || e.target.closest('button, input, .em-chat')) return;
+    if (e.target.closest('button, input, .em-chat')) return;
+    if ((phase === 'speak' || phase === 'think') && !needTap){ unlockAudio(); interrupt(); return; }
+    if (!needTap) return;
     unlockAudio(); mouth.current.unblock(); setNeedTap(false); setSub({ who: '', text: '' });
     if (st.current.listening){ ears.current.resume(); if (!st.current.busy && !mouth.current.busy()) setPhase('listen'); }
   };
@@ -136,9 +162,13 @@ export function EmberView(){
     </div>
     <section class="em-chat" aria-label="Chat with Ember" aria-hidden=${String(!chatOpen)}>
       <div class="em-chat-head"><span>Ember · chat</span>
-        ${chat.messages.length > 0 && html`<button class="em-link" disabled=${busy} onClick=${() => setChat(emberChat.clear())}>Clear</button>`}
+        <button class="em-link" onClick=${() => setShowLog(!showLog)}>${showLog ? 'Chat' : 'Log'}</button>
+        ${chat.messages.length > 0 && !showLog && html`<button class="em-link" disabled=${busy} onClick=${() => setChat(emberChat.clear())}>Clear</button>`}
         <button class="em-close" aria-label="Close chat" onClick=${() => setChatOpen(false)}><${Ico} d=${DOWN} size=${16}/></button></div>
-      <div class="em-log">
+      ${showLog && html`<div class="em-diag"><p class="em-empty">What happened, step by step. If something goes wrong, tap Copy and paste it to Claude.</p>
+        <pre>${emberLog() || 'Nothing yet. Talk to Ember, then come back here.'}</pre>
+        <button class="em-link" onClick=${() => { try { navigator.clipboard.writeText(emberLog()); } catch (e){} }}>Copy</button></div>`}
+      <div class="em-log" hidden=${showLog}>
         ${items.length === 0 && !busy && html`<p class="em-empty">Ask about your food, targets, weight or workouts, or tell Ember what you ate. It adds things straight away, and you can undo anything here.</p>`}
         ${items}
         ${busy && html`<div class="em-ai"><b>Ember</b>${live ? md(live) : html`<span class="typing"><i></i><i></i><i></i></span>`}</div>`}
