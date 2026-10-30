@@ -6,10 +6,11 @@ import { DietTab, TargetsForm, dayTotals, targetsFor, kc, g1 } from './diet.js';
 import { GymTab, WorkoutBar, workoutsList, SOUNDS, playSound } from './gym.js';
 import { EmberView } from './ember.js';
 import { VOICES, emberVoice, createMouth, unlockAudio } from './voice.js';
+import { voiceDownloaded, loadVoice, removeVoice } from './kokoro.js';
 import { AI_MODELS, aiModel, claude, aiError } from './claude.js';
 import { pageFade } from './fx.js';
 
-export const VERSION = '1.32';
+export const VERSION = '1.33';
 const TABS = [['today', 'Today', UI.sun], ['planner', 'Planner', UI.grid], ['diet', 'Diet', UI.diet], ['gym', 'Gym', UI.gym], ['ember', 'Ember', UI.spark], ['settings', 'Settings', UI.gear]];
 const ALL_TABS = TABS.map(t => t[0]);
 
@@ -171,47 +172,41 @@ function TodayView({ app }){
 }
 
 /* ---------- Settings ---------- */
-/* Ember's voice: a few good ElevenLabs voices, every voice in your ElevenLabs account, or any voice ID from their library. Tap one to hear it. */
+/* Ember's voice: Kokoro runs on this iPhone after a one-time download. Tap a voice to hear it. */
 let sampler = null;
 function VoiceCard({ settings }){
-  const key = String(deviceGet().elevenKey || '').trim();
-  const [mine, setMine] = useState(null);      // voices from your ElevenLabs account
-  const [note, setNote] = useState('');
-  const [custom, setCustom] = useState('');
+  const [have, setHave] = useState(voiceDownloaded);
+  const [pct, setPct] = useState(null);          // download progress, 0..1, while downloading
+  const [err, setErr] = useState('');
   const [heard, setHeard] = useState('');        // which voice the last preview actually used, and why
   const cur = emberVoice();
-  useEffect(() => {
-    if (!key){ setMine(null); return; }
-    let dead = false;
-    fetch('https://api.elevenlabs.io/v1/voices', { headers: { 'xi-api-key': key } })
-      .then(r => r.ok ? r.json() : Promise.reject(r.status))
-      .then(d => { if (!dead){ setMine((d.voices || []).filter(v => !VOICES.some(p => p[0] === v.voice_id))); setNote(''); } })
-      .catch(st => { if (!dead){ setMine([]); setNote(st === 401 || st === 403 ? 'To list all your ElevenLabs voices here, give the key Voices → Read access in ElevenLabs. The voices above work without it.' : 'Couldn’t load your ElevenLabs voices right now.'); } });
-    return () => { dead = true; };
-  }, [key]);
-  const pick = (id, name) => {
-    unlockAudio(); store.set('settings/app', Object.assign({}, settings, { emberVoice: id, emberVoiceName: name }));
+  const download = async () => {
+    setErr(''); setPct(0);
+    try { await loadVoice(p => setPct(p)); setHave(true); }
+    catch (e){ setErr(e.message); }
+    finally { setPct(null); }
+  };
+  const remove = async () => { await removeVoice(); setHave(false); setHeard(''); };
+  const pick = id => {
+    unlockAudio(); store.set('settings/app', Object.assign({}, settings, { emberVoice: id }));
     setHeard('');
     sampler && sampler.stop();
     sampler = createMouth({ onEngine: setHeard });
     setTimeout(() => sampler.say('Hi, I’m Ember. What did you eat today?'), 50);
   };
-  const row = (id, name, sub) => { const on = cur === id; return html`<button key=${id} class="act-pick" aria-pressed=${String(on)} onClick=${() => pick(id, name)}>
+  const row = ([id, name, sub]) => { const on = cur === id; return html`<button key=${id} class="act-pick" aria-pressed=${String(on)} onClick=${() => pick(id)}>
     <span class="col grow"><span class="row-title">${name}</span><span class="row-sub wrap">${sub}</span></span><span class=${'radio' + (on ? ' on' : '')}></span></button>`; };
-  const known = VOICES.some(v => v[0] === cur) || (mine || []).some(v => v.voice_id === cur);
-  const useCustom = () => { const id = custom.trim(); if (!/^[A-Za-z0-9]{10,40}$/.test(id)) { setNote('That doesn’t look like a voice ID. In ElevenLabs, open a voice and copy its ID.'); return; } setCustom(''); pick(id, 'Voice ' + id.slice(0, 6)); };
   return html`<section class="card">
     <h2 class="card-title">Ember’s voice</h2>
-    ${!key && html`<p class="hint">The natural voices need an ElevenLabs key (above). Until then Ember uses the iPhone voice.</p>`}
-    <div class="list">${VOICES.map(([id, name, sub]) => row(id, name, sub))}
-      ${!known && cur !== 'device' && row(cur, settings.emberVoiceName || 'Your voice', 'From the ElevenLabs library')}</div>
-    ${mine && mine.length > 0 && html`<span class="label">Your ElevenLabs voices</span>
-      <div class="list">${mine.slice(0, 40).map(v => row(v.voice_id, v.name, [v.labels && v.labels.accent, v.labels && (v.labels.description || v.labels.descriptive), v.category === 'premade' ? '' : v.category].filter(Boolean).join(' · ') || 'ElevenLabs voice'))}</div>`}
-    <span class="label">Any other voice</span>
-    <div class="btn-row"><input class="input inset grow" placeholder="Paste a voice ID" autocomplete="off" autocapitalize="off" spellcheck="false" value=${custom} onInput=${e => { setCustom(e.target.value); setNote(''); }}/><button class="btn btn-ghost sm" onClick=${useCustom}>Use</button></div>
-    ${heard && html`<p class=${'status' + (/^ElevenLabs$/.test(heard) ? '' : ' bad')}>Playing: ${heard}</p>`}
-    ${note && html`<p class="hint">${note}</p>`}
-    <p class="hint">Tap a voice to hear it. To use one from the ElevenLabs Voice Library, add it to your voices in ElevenLabs (it then shows up here), or copy its voice ID and paste it above.</p>
+    ${!have && html`<p class="hint">Ember’s natural voice (Kokoro) runs on this iPhone, free and offline. It’s a one-time download of about 90 MB, so use Wi-Fi. Until then Ember uses the iPhone voice.</p>
+      ${pct == null ? html`<button class="btn btn-solid" onClick=${download}>Download Ember’s voice</button>`
+        : html`<div class="dl"><div class="bar-track"><span class="bar-fill" style=${'width:' + Math.round(pct * 100) + '%'}></span></div><span class="hint">${pct < 1 ? 'Downloading… ' + Math.round(pct * 100) + '%' : 'Getting the voice ready…'}</span></div>`}`}
+    ${have && html`<p class="status"><${Ico} d=${UI.check} size=${16} sw=${3}/>Voice downloaded. It works offline.</p>`}
+    ${err && html`<p class="status bad">${err}</p>`}
+    <div class="list">${VOICES.map(row)}</div>
+    ${heard && html`<p class=${'status' + (heard === 'Kokoro' ? '' : ' bad')}>Playing: ${heard}</p>`}
+    <p class="hint">Tap a voice to hear it.${have ? '' : ' The natural voices play after the download.'}</p>
+    ${have && html`<button class="link" onClick=${remove}>Remove the download (frees about 90 MB)</button>`}
   </section>`;
 }
 
@@ -381,10 +376,9 @@ function KeysCard({ showToast }){
   const dev = deviceGet();
   const [usda, setUsda] = useState(dev.usdaKey || '');
   const [claudeKey, setClaudeKey] = useState(dev.claudeKey || '');
-  const [eleven, setEleven] = useState(dev.elevenKey || '');
   const [test, setTest] = useState(null);
   const saved = cleanKey(deviceGet().claudeKey);
-  const save = () => { const u = cleanKey(usda), c = cleanKey(claudeKey), el = cleanKey(eleven); deviceSet({ usdaKey: u, claudeKey: c, elevenKey: el }); setUsda(u); setClaudeKey(c); setEleven(el); setTest(null); showToast('Keys saved on this device.'); };
+  const save = () => { const u = cleanKey(usda), c = cleanKey(claudeKey); deviceSet({ usdaKey: u, claudeKey: c, elevenKey: '' }); setUsda(u); setClaudeKey(c); setTest(null); showToast('Keys saved on this device.'); };
   const runTest = async () => {
     setTest({ state: 'busy' });
     let Anthropic = null;
@@ -393,7 +387,7 @@ function KeysCard({ showToast }){
   };
   return html`<section class="card">
     <h2 class="card-title">API keys</h2>
-    <p class="hint">Food lookups use the free USDA key; Ember uses your Claude key to think and your ElevenLabs key to talk and listen. Keys stay on this device and never sync.</p>
+    <p class="hint">Food lookups use the free USDA key; Ember uses your Claude key to think. Keys stay on this device and never sync.</p>
     <div class="field">
       <label class="label" for="key-usda">USDA FoodData Central</label>
       <input id="key-usda" class="input inset" type="password" placeholder="Free key from api.data.gov" autocomplete="off" autocapitalize="off" spellcheck="false" value=${usda} onInput=${e => setUsda(e.target.value)}/>
@@ -403,10 +397,6 @@ function KeysCard({ showToast }){
       <input id="key-claude" class="input inset" type="password" placeholder="sk-ant-api03-…" autocomplete="off" autocapitalize="off" spellcheck="false" value=${claudeKey} onInput=${e => setClaudeKey(e.target.value)}/>
       ${saved && html`<p class="hint">Saved key: <b class="mono">${keyPreview(saved)}</b></p>`}
       ${saved && !saved.startsWith('sk-ant-api') && html`<p class="warn"><${Ico} d=${UI.alert} size=${16}/>This doesn’t look like an API key. Keys from console.anthropic.com → Settings → API keys start with sk-ant-api03-.</p>`}
-    </div>
-    <div class="field">
-      <label class="label" for="key-eleven">ElevenLabs (Ember’s voice)</label>
-      <input id="key-eleven" class="input inset" type="password" placeholder="sk_…" autocomplete="off" autocapitalize="off" spellcheck="false" value=${eleven} onInput=${e => setEleven(e.target.value)}/>
     </div>
     <div class="btn-row">
       <button class="btn btn-ghost sm" onClick=${save}>Save keys</button>

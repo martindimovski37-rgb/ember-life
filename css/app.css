@@ -751,6 +751,8 @@ body{overflow-x:clip}
 .main .stack > :not(.head):not(.tcards){animation:cardin .32s cubic-bezier(.2,.8,.2,1) backwards}
 .main .stack > :nth-child(2){animation-delay:35ms} .main .stack > :nth-child(3){animation-delay:70ms} .main .stack > :nth-child(4){animation-delay:105ms} .main .stack > :nth-child(5){animation-delay:140ms} .main .stack > :nth-child(6){animation-delay:175ms} .main .stack > :nth-child(7){animation-delay:210ms} .main .stack > :nth-child(8){animation-delay:245ms} .main .stack > :nth-child(9){animation-delay:280ms} .main .stack > :nth-child(10){animation-delay:315ms}
 
+.dl{display:flex; flex-direction:column; gap:6px}
+
 /* ---------- Ember tab: always a black screen with the orb, whatever the theme ---------- */
 body.ember-on, body.ember-on::before{background:#030102}
 body.ember-on .tabbar{background:#0A0606; border-top-color:#241616}

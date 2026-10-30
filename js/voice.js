@@ -1,17 +1,12 @@
 /* Ember's voice and ears.
-   Speaking: ElevenLabs when a key is saved (natural voice, and its loudness drives the orb), otherwise the built-in iPhone voice.
-   Listening: the browser's own speech recognition when it works; otherwise the mic is recorded whenever you speak
-   and ElevenLabs turns it into text (this also works in the home-screen app, where speech recognition is often blocked). */
-import { store, deviceGet } from './store.js';
+   Speaking: Kokoro, a natural voice that runs on the iPhone itself once it's downloaded (Settings → Ember's voice);
+   until then, or if it fails, the built-in iPhone voice. The orb follows the loudness of whatever is playing.
+   Listening: the iPhone's own speech recognition. */
+import { store } from './store.js';
+import { KOKORO_VOICES, voiceDownloaded, kokoroSpeak } from './kokoro.js';
 
-export const VOICES = [
-  ['onwK4e9ZLuTAKqWW03F9', 'Daniel', 'British, calm and steady'],
-  ['nPczCjzI2devNBz1zQrb', 'Brian', 'Deep and warm'],
-  ['JBFqnCBsd6RMkjVDRZzb', 'George', 'British, warm storyteller'],
-  ['device', 'iPhone voice', 'Free and offline, but robotic']
-];
-export const emberVoice = () => (store.get('settings/app') || {}).emberVoice || VOICES[0][0];
-const elevenKey = () => String(deviceGet().elevenKey || '').replace(/[\s​-‍﻿]+/g, '');
+export const VOICES = KOKORO_VOICES.concat([['device', 'iPhone voice', 'Built in, works without the download, but robotic']]);
+export const emberVoice = () => { const v = (store.get('settings/app') || {}).emberVoice; return VOICES.some(x => x[0] === v) ? v : 'am_michael'; };
 
 /* iPhone only lets a page make sound after a tap. Every tap on the mic (or the orb) calls this,
    which wakes the audio player and speaks a silent word, so Ember's voice is allowed later on. */
@@ -42,17 +37,9 @@ export function pieces(t){
 /* ---------- speaking: each piece is fetched as soon as it's ready and played in order, without gaps ---------- */
 export function createMouth({ onSpeaking, onPiece, onError, onBlocked, onEngine } = {}){
   const queue = []; let playing = false, current = null, gen = 0, deviceTalking = false, wordAt = 0, warned = false, blocked = false;
-  const useEleven = () => emberVoice() !== 'device' && !!elevenKey() && !!ctx;
-  const fetchAudio = text => fetch('https://api.elevenlabs.io/v1/text-to-speech/' + emberVoice() + '?output_format=mp3_44100_128', {
-    method: 'POST', headers: { 'xi-api-key': elevenKey(), 'Content-Type': 'application/json', Accept: 'audio/mpeg' },
-    body: JSON.stringify({ text, model_id: 'eleven_flash_v2_5', voice_settings: { stability: .5, similarity_boost: .75 } })
-  }).then(async r => {
-    if (r.ok) return r.arrayBuffer();
-    // pass on ElevenLabs' own explanation, so it's clear why the natural voice didn't play
-    let why = ''; try { const d = (await r.json()).detail; why = typeof d === 'string' ? d : d && (d.message || d.status) || ''; } catch (e){}
-    throw new Error('ElevenLabs said: ' + (why || 'error') + ' (' + r.status + ').');
-  })
-    .then(b => new Promise((ok, no) => { const p = ctx.decodeAudioData(b, ok, () => no(new Error('The ElevenLabs audio couldn’t be played on this device.'))); if (p && p.then) p.then(ok, () => {}); }));
+  const useKokoro = () => emberVoice() !== 'device' && voiceDownloaded() && !!ctx;
+  // Kokoro makes the sound in the background; it comes back as raw audio that the shared player plays
+  const makeAudio = text => kokoroSpeak(text, emberVoice()).then(({ audio, rate }) => { const b = ctx.createBuffer(1, audio.length, rate); b.copyToChannel(audio, 0); return b; });
   // the iPhone voice; if iPhone blocks it, it never starts and never reports back, so give up after a moment instead of freezing
   const viaDevice = text => new Promise(res => {
     if (!('speechSynthesis' in window)) return res();
@@ -71,48 +58,59 @@ export function createMouth({ onSpeaking, onPiece, onError, onBlocked, onEngine 
     setTimeout(() => { if (!started && !over){ try { speechSynthesis.cancel(); } catch (e){} blocked = true; onBlocked && onBlocked(); fin(); } }, 2500);
     setTimeout(fin, 5000 + text.length * 110);
   });
-  const playBuffer = (audio, my) => new Promise(res => { if (my !== gen) return res(); const s = ctx.createBufferSource(); s.buffer = audio; s.connect(analyser); s.onended = res; current = s; s.start(0); });
+  // play one piece; never wait forever, even if the player was paused by iPhone (it then reports that a tap is needed)
+  const playBuffer = (audio, my) => new Promise(res => {
+    if (my !== gen) return res();
+    if (ctx.state !== 'running') ctx.resume().catch(() => {});
+    let over = false; const fin = () => { if (!over){ over = true; res(); } };
+    const s = ctx.createBufferSource(); s.buffer = audio; s.connect(analyser); s.onended = fin; current = s; s.start(0);
+    setTimeout(() => { if (!over && ctx.state !== 'running'){ blocked = true; onBlocked && onBlocked(); try { s.stop(); } catch (e){} fin(); } }, 1500);
+    setTimeout(fin, audio.duration * 1000 + 1500);
+  });
   const next = async () => {
     if (playing) return;
     if (!queue.length){ onSpeaking && onSpeaking(false); return; }
     playing = true; onSpeaking && onSpeaking(true);
     const item = queue.shift(), my = gen;
-    onPiece && onPiece(item.text);
     try {
-      if (item.audio){ const a = await item.audio; onEngine && onEngine('ElevenLabs'); await playBuffer(a, my); }
-      else { onEngine && onEngine(!elevenKey() ? 'iPhone voice (no ElevenLabs key saved)' : emberVoice() === 'device' ? 'iPhone voice' : 'iPhone voice (the audio player wasn’t started)'); await viaDevice(item.text); }
+      if (item.audio && blocked){ onPiece && onPiece(item.text); await new Promise(r => setTimeout(r, 600 + item.text.length * 45)); }
+      else if (item.audio){ const a = await item.audio; if (my !== gen) return; onPiece && onPiece(item.text); onEngine && onEngine('Kokoro'); await playBuffer(a, my); }
+      else { onPiece && onPiece(item.text); onEngine && onEngine(emberVoice() === 'device' ? 'iPhone voice' : !voiceDownloaded() ? 'iPhone voice (download Ember’s voice first)' : 'iPhone voice (the audio player wasn’t started)'); await viaDevice(item.text); }
     } catch (e){
-      if (!warned){ warned = true; onError && onError(e.message + ' Using the iPhone voice for now.'); }
+      if (!warned){ warned = true; onError && onError(e.message + ' Using the iPhone voice for now.'); }   // Kokoro failed: say it with the iPhone voice instead
       onEngine && onEngine('iPhone voice, because: ' + e.message);
-      if (my === gen) await viaDevice(item.text);
+      if (my === gen){ onPiece && onPiece(item.text); await viaDevice(item.text); }
     }
     current = null;
     if (my !== gen) return;
     playing = false; next();
   };
   return {
-    say(text){ pieces(text).forEach(t => { const item = { text: t, audio: useEleven() ? fetchAudio(t) : null }; if (item.audio) item.audio.catch(() => {}); queue.push(item); }); next(); },
+    say(text){
+      const ps = pieces(text);
+      // the very first piece is made shorter when it can be, so Ember starts talking sooner
+      if (!playing && !queue.length && ps[0] && ps[0].length > 70){ const c = ps[0].indexOf(', ', 25); if (c > 0 && c < 70) ps.splice(0, 1, ps[0].slice(0, c + 1), ps[0].slice(c + 2)); }
+      ps.forEach(t => { const item = { text: t, audio: useKokoro() ? makeAudio(t) : null }; if (item.audio) item.audio.catch(() => {}); queue.push(item); });
+      next();
+    },
     stop(){ gen++; queue.length = 0; try { current && current.stop(); } catch (e){} try { speechSynthesis.cancel(); } catch (e){} playing = false; current = null; deviceTalking = false; onSpeaking && onSpeaking(false); },
     busy: () => playing || queue.length > 0,
     unblock(){ blocked = false; },
-    /* how loud Ember is right now: the real sound with ElevenLabs; with the iPhone voice, a pulse on every word */
+    /* how loud Ember is right now: the real sound with Kokoro; with the iPhone voice, a pulse on every word */
     level: () => current && analyser ? Math.min(1, rms(analyser, buf) * 4.5) : deviceTalking ? .3 + .7 * Math.max(0, 1 - (performance.now() - wordAt) / 260) : 0
   };
 }
 
 /* ---------- listening ---------- */
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-export const canListen = () => !!SR || (!!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) && !!window.MediaRecorder && !!elevenKey());
+export const canListen = () => !!SR;
 
-/* onWords(text) while you talk, onHeard(text) when you've finished a sentence, onError(message) */
-/* onStuck() when iPhone didn't let listening restart by itself: a tap brings it back */
+/* onWords(text) while you talk, onHeard(text) when you've finished a sentence, onError(message),
+   onStuck() when iPhone didn't let listening restart by itself: a tap brings it back */
 export function createEars({ onWords, onHeard, onError, onStuck }){
-  let on = false, held = false, mode = SR ? 'native' : 'record', rec = null, heard = '', timer = 0, bump = 0, ever = false, check = 0;
-  // the recorder fallback
-  let stream = null, micAn = null, micBuf = null, mr = null, chunks = [], loud = 0, quietSince = 0, poll = 0, startedAt = 0;
-
+  let on = false, held = false, rec = null, heard = '', timer = 0, bump = 0, ever = false, check = 0;
   const finish = t => { clearTimeout(timer); heard = ''; const s = t.trim(); if (s) onHeard(s); };
-  const startNative = () => {
+  const start = () => {
     const me = rec = new SR(); rec.continuous = true; rec.interimResults = true; rec.lang = navigator.language || 'en-US';
     let started = false;
     rec.onstart = () => { started = true; ever = true; };
@@ -126,45 +124,19 @@ export function createEars({ onWords, onHeard, onError, onStuck }){
     rec.onerror = e => {
       if (e.error === 'no-speech' || e.error === 'aborted') return;
       if ((e.error === 'not-allowed' || e.error === 'service-not-allowed') && ever && on){ onStuck && onStuck(); return; }   // worked before: iPhone just wants a tap to carry on
-      if ((e.error === 'service-not-allowed' || e.error === 'not-allowed' || e.error === 'network') && navigator.mediaDevices && window.MediaRecorder && elevenKey()){ mode = 'record'; rec = null; startRecord(); return; }
-      on = false; onError(e.error === 'not-allowed' || e.error === 'service-not-allowed' ? 'Ember isn’t allowed to listen here. Allow the microphone, or add an ElevenLabs key in Settings so Ember can listen another way.' : 'Listening stopped (' + e.error + '). Tap the mic to try again.');
+      on = false; onError(e.error === 'not-allowed' || e.error === 'service-not-allowed' ? 'Ember isn’t allowed to listen. Allow the microphone and speech recognition for Ember Life in your iPhone settings, then tap the mic again.' : 'Listening stopped (' + e.error + '). Tap the mic to try again.');
     };
-    rec.onend = () => { if (on && !held && mode === 'native' && rec === me) setTimeout(() => { if (on && !held && mode === 'native' && rec === me) startNative(); }, 200); };
+    rec.onend = () => { if (on && !held && rec === me) setTimeout(() => { if (on && !held && rec === me) start(); }, 200); };
     try { rec.start(); } catch (e){}
   };
-  const transcribe = async blob => {
-    const fd = new FormData(); fd.append('file', blob, 'speech.' + (blob.type.includes('mp4') ? 'm4a' : 'webm')); fd.append('model_id', 'scribe_v1');
-    const r = await fetch('https://api.elevenlabs.io/v1/speech-to-text', { method: 'POST', headers: { 'xi-api-key': elevenKey() }, body: fd });
-    if (!r.ok) throw new Error('Couldn’t understand that (' + r.status + ').');
-    return ((await r.json()).text || '').replace(/\(.*?\)/g, '').trim();
-  };
-  const startRecord = async () => {
-    try {
-      if (!stream){
-        stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-        unlockAudio(); micAn = ctx.createAnalyser(); micAn.fftSize = 512; micBuf = new Uint8Array(512); ctx.createMediaStreamSource(stream).connect(micAn);
-      }
-    } catch (e){ on = false; onError('Ember can’t use the microphone. Allow it in your iPhone settings and try again.'); return; }
-    clearInterval(poll);
-    poll = setInterval(() => {
-      if (!on || held) return;
-      loud = rms(micAn, micBuf); const now = performance.now();
-      if (loud > .035){ quietSince = 0; bump = now;
-        if (!mr){ chunks = []; mr = new MediaRecorder(stream); mr.ondataavailable = e => e.data.size && chunks.push(e.data); startedAt = now;
-          mr.onstop = async () => { const long = performance.now() - startedAt > 600, blob = new Blob(chunks, { type: mr.mimeType || 'audio/mp4' }); mr = null;
-            if (!long || !on) return; onWords('…'); try { finish(await transcribe(blob)); } catch (er){ onWords(''); onError(er.message); } };
-          mr.start(); onWords('…'); }
-      } else if (mr){ if (!quietSince) quietSince = now; else if (now - quietSince > 700) mr.stop(); }
-    }, 60);
-  };
   return {
-    start(){ if (on) return; on = true; held = false; if (mode === 'native') startNative(); else startRecord(); },
+    start(){ if (on) return; on = true; held = false; start(); },
     /* after a tap, when iPhone wanted one */
-    resume(){ if (!on) return; held = false; if (mode === 'native'){ try { rec && rec.abort(); } catch (e){} startNative(); } },
-    stop(){ on = false; clearTimeout(timer); clearTimeout(check); heard = ''; clearInterval(poll); try { rec && rec.abort(); } catch (e){} rec = null; try { mr && mr.state !== 'inactive' && mr.stop(); } catch (e){} mr = null; if (stream){ stream.getTracks().forEach(t => t.stop()); stream = null; } },
+    resume(){ if (!on) return; held = false; try { rec && rec.abort(); } catch (e){} start(); },
+    stop(){ on = false; clearTimeout(timer); clearTimeout(check); heard = ''; try { rec && rec.abort(); } catch (e){} rec = null; },
     /* while Ember is talking it stops listening, so it doesn't hear itself */
-    hold(h){ if (!on || held === h) return; held = h; if (mode === 'native'){ if (h){ try { rec && rec.abort(); } catch (e){} } else startNative(); } else if (h && mr){ try { mr.stop(); } catch (e){} } },
-    level: () => mode === 'record' && micAn && on ? Math.min(1, loud * 6) : Math.max(0, 1 - (performance.now() - bump) / 500) * .7,
+    hold(h){ if (!on || held === h) return; held = h; if (h){ try { rec && rec.abort(); } catch (e){} } else start(); },
+    level: () => Math.max(0, 1 - (performance.now() - bump) / 500) * .7,
     get on(){ return on; }
   };
 }

@@ -4,6 +4,7 @@ import { askEmber, emberChat, actionLine, md, photoData } from './assistant.js';
 import { createMouth, createEars, unlockAudio, canListen } from './voice.js';
 import { loadThree, getOrb } from './orb.js';
 import { claude } from './claude.js';
+import { voiceDownloaded, loadVoice } from './kokoro.js';
 
 const CHAT = 'M20 11.5a7.5 7.5 0 0 1-10.9 6.7L4 19.5l1.3-4.6A7.5 7.5 0 1 1 20 11.5z';
 const MIC = 'M9 3h6v11H9z M5 11a7 7 0 0 0 14 0 M12 18v3';
@@ -47,6 +48,7 @@ export function EmberView(){
       onStuck: () => { setNeedTap(true); setSub({ who: 'hint', text: 'Tap anywhere to keep talking' }); }
     });
     claude().catch(() => {});   // load the Claude connection now, so the first answer starts sooner
+    if (voiceDownloaded()) loadVoice().catch(() => {});   // wake Ember's voice up now, so the first sentence isn't delayed
     // the orb is built once in the background and kept; here it's just put on screen and woken up
     loadThree().then(() => {
       if (dead) return;
@@ -84,7 +86,7 @@ export function EmberView(){
   const toggleMic = () => {
     unlockAudio(); mouth.current.unblock(); setNeedTap(false);
     if (listening){ setListening(false); ears.current.stop(); if (!busy && !mouth.current.busy()) setPhase('idle'); setSub({ who: '', text: '' }); return; }
-    if (!canListen()){ setErr('Talking isn’t available in this browser. Add an ElevenLabs key in Settings so Ember can listen, or type in the chat.'); setChatOpen(true); return; }
+    if (!canListen()){ setErr('Talking isn’t available in this browser. You can type to Ember in the chat.'); setChatOpen(true); return; }
     setErr(''); setListening(true); ears.current.start(); if (!busy && !mouth.current.busy()) setPhase('listen');
   };
   /* one tap anywhere on the screen, when iPhone asked for it, carries the conversation on */
