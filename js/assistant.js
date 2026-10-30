@@ -1,7 +1,7 @@
-/* AI assistant: a chat that can read your Ember Life data and propose new foods, meals, log entries and routines.
-   Nothing is saved by the assistant itself: every change shows up as a card and is saved only when you tap it.
+/* Ember, the assistant: reads your Ember Life data and adds foods, meals, log entries and routines.
+   It says what it is about to do, saves it straight away, and every change can be undone from the chat.
    The conversation lives on this device only (it can hold photos), and is only ever appended to. */
-import { html, useState, useEffect, useRef, Ico, UI, uid, dayKey, fmtShort, plural } from './lib.js';
+import { html, uid, dayKey, fmtShort, plural } from './lib.js';
 import { store } from './store.js';
 import { claude, aiModel, fallbackParams, aiError } from './claude.js';
 import { foodMap, mealTotals, entryMacros, addUp, getTargets, targetsFor, goalFor, maintenance, latestWeight, dayTotals, usdaSearch, MEAL_TAGS, kc, g1 } from './diet.js';
@@ -10,18 +10,21 @@ import { loadLib, allExercises, rank, exById, workoutsList, workedOutOn, normRou
 const CHAT_KEY = 'ember-life-chat';
 const MAX_STEPS = 10;
 
-const SYSTEM = `You are the assistant inside Ember Life, a personal app that combines a day planner, a diet tracker (food library per 100 g, saved meals, a daily log, calorie and macro targets, weigh-ins) and a gym tracker (exercise library, routines, workout history).
+const SYSTEM = `You are Ember, the assistant inside Ember Life, a personal app that combines a day planner, a diet tracker (food library per 100 g, saved meals, a daily log, calorie and macro targets, weigh-ins) and a gym tracker (exercise library, routines, workout history).
 
 How to work:
 - Look things up with the tools before answering questions about the user's data. Never guess their targets, foods, meals, weight or workouts.
 - Units are metric: grams, kg, kcal. Food values are per 100 g.
 - For nutrition values, use the user's own foods first, then usda_lookup. Only estimate when neither has it, and say clearly that it is an estimate.
-- To create anything (a food, a meal, a log entry, a routine), call the matching propose_ tool. The app shows it as a card and saves it only when the user taps the button. Never say something was saved or logged; say it's ready to add.
+- To create anything (a food, a meal, a log entry, a routine), call the matching propose_ tool. It is saved straight away and the user can undo it from the chat.
+- Before calling a propose_ tool, first write one short sentence saying what you are about to do, like "Adding four eggs to your breakfast now." After it is saved, confirm in a sentence or two with the key numbers (calories, protein, what is left today).
+- If you are unsure what the user means (which meal, how much), ask before adding anything.
 - When recommending portions of meat, fish, rice, pasta, potatoes or similar, give the weight the way their food is stored (raw or cooked, per the food library), and also give the other one when it helps (for example "200 g raw chicken, about 150 g cooked").
 - Photos: if it's a nutrition label, read the exact values and convert them to per 100 g. If it's a plate of food, identify the foods, look them up, estimate the portions and say the portions are estimates. If it's a package front without a label, ask for a photo of the nutrition table or suggest the barcode scanner in Diet → Foods.
 - When proposing a meal or a day of eating, keep the totals close to the user's targets and mention how they compare.
 - For routines, use search_exercises to find real exercise ids.
-- Keep answers short and easy to read on a phone: plain sentences and short "- " bullet lists, no tables, no headings.`;
+- Your replies are read aloud when the user is talking to you, marked (spoken). Then answer in one to three short sentences: no lists, no markdown, numbers written plainly, no emoji.
+- When the user typed instead, keep answers short and easy to read on a phone: plain sentences and short "- " bullet lists, no tables, no headings.`;
 
 const T = (name, description, properties, required) => ({ name, description, eager_input_streaming: true, input_schema: { type: 'object', properties, required: required || [] } });
 const NUTR = { kcal: { type: 'number' }, protein: { type: 'number' }, carbs: { type: 'number' }, fat: { type: 'number' } };
@@ -34,22 +37,22 @@ const TOOLS = [
   T('search_exercises', 'Search the exercise library. Returns ids for routines.', { query: { type: 'string' } }, ['query']),
   T('get_workouts', 'Recent workouts with exercises and sets, newest first. Optionally only those containing one exercise.', { exercise_id: { type: 'string' }, limit: { type: 'integer' } }),
   T('list_routines', 'The user\'s saved gym routines.', {}),
-  T('propose_food', 'Show a card to add a food to the user\'s library. Values per 100 g.', {
+  T('propose_food', 'Add a food to the user\'s library (saved straight away, can be undone). Values per 100 g.', {
     name: { type: 'string' }, brand: { type: 'string' }, state: { type: 'string', enum: ['raw', 'cooked', ''] },
     kcal: NUTR.kcal, protein: NUTR.protein, carbs: NUTR.carbs, fat: NUTR.fat,
     source: { type: 'string', enum: ['usda', 'label', 'estimate'], description: 'usda = from usda_lookup, label = read from a nutrition label, estimate = your estimate' }
   }, ['name', 'state', 'kcal', 'protein', 'carbs', 'fat', 'source']),
-  T('propose_meal', 'Show a card to save a meal (foods with weights). Use food_id for foods already in the library; give new_food for foods that are not.', {
+  T('propose_meal', 'Save a meal (foods with weights; saved straight away, can be undone). Use food_id for foods already in the library; give new_food for foods that are not.', {
     name: { type: 'string' }, tag: { type: 'string', enum: ['breakfast', 'lunch', 'dinner', 'snack'] },
     items: { type: 'array', items: { type: 'object', properties: { food_id: { type: 'string' }, name: { type: 'string' }, grams: { type: 'number' },
       new_food: { type: 'object', properties: { state: { type: 'string', enum: ['raw', 'cooked', ''] }, kcal: NUTR.kcal, protein: NUTR.protein, carbs: NUTR.carbs, fat: NUTR.fat, source: { type: 'string', enum: ['usda', 'label', 'estimate'] } } } }, required: ['name', 'grams'] } }
   }, ['name', 'tag', 'items']),
-  T('propose_log', 'Show a card to add items to the daily log. Each item is a saved meal (meal_id + portions) or a food (food_id or new_food + grams).', {
+  T('propose_log', 'Add items to the daily log (saved straight away, can be undone). Each item is a saved meal (meal_id + portions) or a food (food_id or new_food + grams).', {
     date: { type: 'string', description: 'YYYY-MM-DD, default today' }, slot: { type: 'string', enum: ['breakfast', 'lunch', 'dinner', 'snack'] },
     items: { type: 'array', items: { type: 'object', properties: { meal_id: { type: 'string' }, portions: { type: 'number' }, food_id: { type: 'string' }, name: { type: 'string' }, grams: { type: 'number' },
       new_food: { type: 'object', properties: { state: { type: 'string', enum: ['raw', 'cooked', ''] }, kcal: NUTR.kcal, protein: NUTR.protein, carbs: NUTR.carbs, fat: NUTR.fat, source: { type: 'string', enum: ['usda', 'label', 'estimate'] } } } }, required: ['name'] } }
   }, ['slot', 'items']),
-  T('propose_routine', 'Show a card to save a gym routine. exercise_id must come from search_exercises.', {
+  T('propose_routine', 'Save a gym routine (saved straight away, can be undone). exercise_id must come from search_exercises.', {
     name: { type: 'string' },
     exercises: { type: 'array', items: { type: 'object', properties: { exercise_id: { type: 'string' }, warmup_sets: { type: 'integer' }, working_sets: { type: 'integer' }, rest_seconds: { type: 'integer' } }, required: ['exercise_id', 'working_sets'] } }
   }, ['name', 'exercises'])
@@ -146,22 +149,24 @@ function checkProposal(name, x){
     const ids = new Set(allExercises().map(e => e.id));
     x.exercises.forEach(e => { if (!ids.has(e.exercise_id)) throw new Error('Unknown exercise_id ' + e.exercise_id + '. Use search_exercises.'); });
   }
-  return 'Shown to the user as a card with a button. Nothing is saved until they tap it.';
+  return 'ok';
 }
 
-/* Saving a confirmed card */
+/* Saving a proposal. Returns a message for Claude and what was created, so it can be undone. */
 const SRC = { usda: 'usda', label: 'manual', estimate: 'ai' };
-function makeFood(name, f){
-  const id = uid();
-  store.set('foods/' + id, { id, name: name.trim(), brand: (f.brand || '').trim(), state: f.state || '', kcal: r1(f.kcal), p: r1(f.protein), c: r1(f.carbs), fat: r1(f.fat), source: SRC[f.source] || 'ai', ref: '', barcode: '', createdAt: Date.now() });
-  return store.get('foods/' + id);
-}
-function confirmCard(name, x){
-  if (name === 'propose_food') return makeFood(x.name, x).name + ' added to your foods.';
+function applyCard(name, x){
+  const made = { foods: [], meals: [], routines: [], log: null };
+  const makeFood = (fname, f) => {
+    const id = uid(); made.foods.push(id);
+    store.set('foods/' + id, { id, name: fname.trim(), brand: (f.brand || '').trim(), state: f.state || '', kcal: r1(f.kcal), p: r1(f.protein), c: r1(f.carbs), fat: r1(f.fat), source: SRC[f.source] || 'ai', ref: '', barcode: '', createdAt: Date.now() });
+    return store.get('foods/' + id);
+  };
+  let msg = '';
+  if (name === 'propose_food') msg = makeFood(x.name, x).name + ' added to your foods.';
   if (name === 'propose_meal'){
     const items = x.items.map(it => ({ id: uid(), foodId: it.food_id || makeFood(it.name, it.new_food).id, g: it.grams }));
-    const id = uid(); store.set('meals/' + id, { id, name: x.name.trim(), tag: x.tag, items, createdAt: Date.now() });
-    return x.name + ' saved to your meals.';
+    const id = uid(); made.meals.push(id); store.set('meals/' + id, { id, name: x.name.trim(), tag: x.tag, items, createdAt: Date.now() });
+    msg = x.name + ' saved to your meals.';
   }
   if (name === 'propose_log'){
     const date = /^\d{4}-\d{2}-\d{2}$/.test(x.date || '') ? x.date : dayKey();
@@ -174,13 +179,24 @@ function confirmCard(name, x){
     });
     const log = store.get('log/' + date) || { date, entries: [] };
     store.set('log/' + date, Object.assign({}, log, { date, entries: log.entries.concat(entries) }));
-    return plural(entries.length, 'item', 'items') + ' added to ' + (date === dayKey() ? 'today' : fmtShort(date)) + '.';
+    made.log = { date, ids: entries.map(e => e.id) };
+    const t = dayTotals(date), tg = targetsFor(date);
+    msg = plural(entries.length, 'item', 'items') + ' added to ' + (date === dayKey() ? 'today' : fmtShort(date)) + '. Day total now ' + Math.round(t.kcal) + ' kcal, ' + r1(t.p) + ' g protein' + (tg.kcal ? '; ' + Math.round(tg.kcal - t.kcal) + ' kcal and ' + r1(tg.p - t.p) + ' g protein left.' : '.');
   }
   if (name === 'propose_routine'){
-    const id = uid();
+    const id = uid(); made.routines.push(id);
     store.set('routines/' + id, normRoutine({ id, name: x.name.trim(), items: x.exercises.map(e => ({ ex: e.exercise_id, warm: Math.max(0, e.warmup_sets || 0), sets: Math.max(1, e.working_sets || 3), rest: isNum(e.rest_seconds) ? e.rest_seconds : 90 })) }));
-    return x.name + ' saved to your routines.';
+    msg = x.name + ' saved to your routines.';
   }
+  return { msg, made };
+}
+/* Undo removes exactly what that change created */
+function undoCard(made){
+  if (!made) return;
+  if (made.log){ const log = store.get('log/' + made.log.date); if (log) store.set('log/' + made.log.date, Object.assign({}, log, { entries: log.entries.filter(e => !made.log.ids.includes(e.id)) })); }
+  made.meals.forEach(id => store.del('meals/' + id));
+  made.routines.forEach(id => store.del('routines/' + id));
+  made.foods.forEach(id => store.del('foods/' + id));
 }
 
 /* What a card shows */
@@ -207,11 +223,11 @@ function cardView(name, x){
 }
 
 /* ---------- Chat storage (device only) ---------- */
-function loadChat(){ try { return JSON.parse(localStorage.getItem(CHAT_KEY)) || { messages: [], cards: {} }; } catch (e){ return { messages: [], cards: {} }; } }
+function loadChat(){ try { return JSON.parse(localStorage.getItem(CHAT_KEY)) || { messages: [], cards: {}, undo: {} }; } catch (e){ return { messages: [], cards: {}, undo: {} }; } }
 function saveChat(c){ try { localStorage.setItem(CHAT_KEY, JSON.stringify(c)); return true; } catch (e){ return false; } }
 
 /* Photos are shrunk before sending: smaller is cheaper and still sharp enough for labels */
-function photoData(file){
+export function photoData(file){
   return new Promise((ok, fail) => {
     const img = new Image(), url = URL.createObjectURL(file);
     img.onload = () => { const s = Math.min(1, 1400 / Math.max(img.width, img.height)), c = document.createElement('canvas');
@@ -222,143 +238,72 @@ function photoData(file){
   });
 }
 
-/* ---------- UI ---------- */
-export function AssistantButton({ onOpen, raised }){
-  return html`<button class=${'ai-fab' + (raised ? ' raised' : '')} aria-label="Open assistant" onClick=${onOpen}><${Ico} d=${UI.spark} size=${24} sw=${2}/></button>`;
+/* ---------- The engine: one request, with Claude calling tools until it has answered ---------- */
+export const emberChat = {
+  load: loadChat,
+  undo(id){ const c = loadChat(); undoCard((c.undo || {})[id]); c.cards = Object.assign({}, c.cards, { [id]: 'undone' }); saveChat(c); return c; },
+  clear(){ const c = { messages: [], cards: {}, undo: {} }; saveChat(c); return c; }
+};
+/* What to show for a change in the chat: a short title and the totals */
+export function actionLine(u){
+  const v = cardView(u.name, u.input || {});
+  return v ? { title: v.kind === 'Daily log' ? v.title.replace(/^Log to /, 'Added to ') : v.kind + ': ' + v.title, detail: v.total ? v.total.replace(/^Total: /, '') : v.lines.filter(Boolean)[0] || '' } : null;
 }
-
-const SUGGEST = ['What should I eat for dinner to hit my targets?', 'Add a food from a photo of the label', 'Build me a push day routine', 'How did I do this week?'];
-
-export function AssistantChat({ app, close }){
-  const [chat, setChat] = useState(loadChat);
-  const [text, setText] = useState('');
-  const [photos, setPhotos] = useState([]);
-  const [busy, setBusy] = useState(false);
-  const [live, setLive] = useState('');
-  const [err, setErr] = useState('');
-  const [note, setNote] = useState('');
-  const endRef = useRef(null), fileRef = useRef(null), stopRef = useRef(null), inputRef = useRef(null);
-  const chatRef = useRef(chat);
-  const commit = next => { chatRef.current = next; setChat(next); if (!saveChat(next)) setNote('This chat is too big to keep after closing. Start a new chat soon.'); };
-  useEffect(() => { endRef.current && endRef.current.scrollIntoView({ block: 'end' }); }, [chat, live, busy]);
-  const [, setLibReady] = useState(0);
-  useEffect(() => { loadLib().then(() => setLibReady(1)); }, []);
-  useEffect(() => { document.body.classList.add('noscroll'); return () => document.body.classList.remove('noscroll'); }, []);
-
-  const send = async raw => {
-    const q = (raw != null ? raw : text).trim();
-    if ((!q && !photos.length) || busy) return;
-    setErr(''); setText(''); const pics = photos; setPhotos([]);
-    const now = new Date().toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-    const content = pics.map(d => ({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: d } }))
-      .concat([{ type: 'text', text: '[' + now + '] ' + (q || 'Here is a photo.') }]);
-    let msgs = chatRef.current.messages.concat([{ role: 'user', content }]);
-    commit(Object.assign({}, chatRef.current, { messages: msgs }));
-    setBusy(true);
-    let Anthropic = null;
-    try {
-      const c = await claude(); Anthropic = c.Anthropic;
-      const model = aiModel();
-      for (let step = 0; step < MAX_STEPS; step++){
-        const stream = c.client.beta.messages.stream(Object.assign({ model, max_tokens: 16000, system: SYSTEM, tools: TOOLS, messages: msgs, cache_control: { type: 'ephemeral' } }, fallbackParams(model)));
-        stopRef.current = stream;
-        stream.on('text', (_, snapshot) => setLive(snapshot));
-        let msg;
-        try { msg = await stream.finalMessage(); }
-        catch (e){ if (e instanceof Anthropic.APIError || stream.aborted) throw e; continue; }   /* a tool input that didn't parse: ask again */
-        setLive('');
-        msgs = msgs.concat([{ role: 'assistant', content: msg.content }]);
-        commit(Object.assign({}, chatRef.current, { messages: msgs }));
-        if (msg.stop_reason === 'refusal'){ setErr('Claude declined to answer that one. Try asking another way.'); break; }
-        if (msg.stop_reason === 'pause_turn') continue;
-        if (msg.stop_reason === 'max_tokens'){ setErr('The answer got too long. Ask for something smaller.'); break; }
-        const uses = msg.content.filter(b => b.type === 'tool_use');
-        if (msg.stop_reason !== 'tool_use' || !uses.length) break;
-        const results = [];
-        for (const u of uses){
-          try { results.push({ type: 'tool_result', tool_use_id: u.id, content: JSON.stringify(await runTool(u.name, u.input || {})) }); }
-          catch (e){ results.push({ type: 'tool_result', tool_use_id: u.id, is_error: true, content: e.message || 'Tool failed' }); }
+/* text: what the user said or typed. spoken: true when it came from the voice.
+   say(text) is called with each finished piece of Ember's reply (first what it is about to do, then the result).
+   live(text) streams the reply as it is written. changed(chat) after every step. Returns a stop function via onStop. */
+export async function askEmber({ text, photos = [], spoken, say, live, changed, onStop }){
+  const now = new Date().toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const content = photos.map(d => ({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: d } }))
+    .concat([{ type: 'text', text: '[' + now + ']' + (spoken ? ' (spoken)' : '') + ' ' + (text || 'Here is a photo.') }]);
+  let chat = loadChat(); chat.undo = chat.undo || {};
+  const commit = () => { saveChat(chat); changed && changed(chat); };
+  let msgs = chat.messages.concat([{ role: 'user', content }]);
+  chat = Object.assign({}, chat, { messages: msgs }); commit();
+  const c = await claude(), Anthropic = c.Anthropic, model = aiModel();
+  let stopped = false, stream = null;
+  onStop && onStop(() => { stopped = true; try { stream && stream.abort(); } catch (e){} });
+  try {
+    for (let step = 0; step < MAX_STEPS && !stopped; step++){
+      stream = c.client.beta.messages.stream(Object.assign({ model, max_tokens: 16000, system: SYSTEM, tools: TOOLS, messages: msgs, cache_control: { type: 'ephemeral' } }, fallbackParams(model)));
+      if (live) stream.on('text', (_, snapshot) => live(snapshot));
+      let msg;
+      try { msg = await stream.finalMessage(); }
+      catch (e){ if (e instanceof Anthropic.APIError || stream.aborted || stopped) throw e; continue; }   /* a tool input that didn't parse: ask again */
+      live && live('');
+      msgs = msgs.concat([{ role: 'assistant', content: msg.content }]);
+      chat = Object.assign({}, chat, { messages: msgs }); commit();
+      const words = msg.content.filter(b => b.type === 'text').map(b => b.text).join(' ').trim();
+      if (words && say) say(words);
+      if (msg.stop_reason === 'refusal') throw new Error('Ember declined to answer that one. Try asking another way.');
+      if (msg.stop_reason === 'pause_turn') continue;
+      if (msg.stop_reason === 'max_tokens') throw new Error('The answer got too long. Ask for something smaller.');
+      const uses = msg.content.filter(b => b.type === 'tool_use');
+      if (msg.stop_reason !== 'tool_use' || !uses.length) break;
+      const results = [];
+      for (const u of uses){
+        try {
+          let out = await runTool(u.name, u.input || {});
+          if (u.name.startsWith('propose_')){
+            const r = applyCard(u.name, u.input);
+            chat.cards = Object.assign({}, chat.cards, { [u.id]: 'saved' }); chat.undo = Object.assign({}, chat.undo, { [u.id]: r.made });
+            out = 'Saved. ' + r.msg + ' It shows in the chat with an Undo button.';
+          }
+          results.push({ type: 'tool_result', tool_use_id: u.id, content: typeof out === 'string' ? out : JSON.stringify(out) });
         }
-        msgs = msgs.concat([{ role: 'user', content: results }]);
-        commit(Object.assign({}, chatRef.current, { messages: msgs }));
+        catch (e){ results.push({ type: 'tool_result', tool_use_id: u.id, is_error: true, content: e.message || 'Tool failed' }); }
       }
-    } catch (e){
-      if (!(stopRef.current && stopRef.current.aborted)) setErr(aiError(Anthropic, e));
-    } finally { setBusy(false); setLive(''); stopRef.current = null; }
-  };
-  const stop = () => { try { stopRef.current && stopRef.current.abort(); } catch (e){} };
-  const addPhotos = async e => {
-    const files = Array.from(e.target.files || []).slice(0, 3 - photos.length); e.target.value = '';
-    try { const d = await Promise.all(files.map(photoData)); setPhotos(photos.concat(d)); } catch (er){ setErr(er.message); }
-  };
-  const decide = (u, ok) => {
-    let msg = 'Dismissed.';
-    if (ok){ try { msg = confirmCard(u.name, u.input); } catch (e){ setErr('Couldn’t save that: ' + (e.message || 'unknown problem')); return; } }
-    commit(Object.assign({}, chatRef.current, { cards: Object.assign({}, chatRef.current.cards, { [u.id]: ok ? 'saved' : 'dismissed' }) }));
-  };
-  const newChat = () => { if (busy) return; commit({ messages: [], cards: {} }); setErr(''); setNote(''); };
-
-  /* tool results tell us which proposals were rejected by the checks */
-  const failed = {};
-  chat.messages.forEach(m => { if (m.role === 'user' && Array.isArray(m.content)) m.content.forEach(b => { if (b.type === 'tool_result' && b.is_error) failed[b.tool_use_id] = true; }); });
-  const items = [];
-  chat.messages.forEach((m, i) => {
-    if (!Array.isArray(m.content)) return;
-    if (m.role === 'user'){
-      const pics = m.content.filter(b => b.type === 'image'), txt = m.content.filter(b => b.type === 'text').map(b => b.text.replace(/^\[[^\]]*\]\s*/, '')).join('\n');
-      if (pics.length || txt) items.push(html`<div key=${'u' + i} class="bubble me">${pics.map((p, j) => html`<img key=${j} class="bubble-img" src=${'data:image/jpeg;base64,' + p.source.data} alt="Your photo"/>`)}${txt && html`<span>${txt}</span>`}</div>`);
-      return;
+      msgs = msgs.concat([{ role: 'user', content: results }]);
+      chat = Object.assign({}, chat, { messages: msgs }); commit();
     }
-    m.content.forEach((b, j) => {
-      if (b.type === 'text' && b.text.trim()) items.push(html`<div key=${'a' + i + '-' + j} class="bubble ai">${md(b.text)}</div>`);
-      else if (b.type === 'tool_use' && b.name.startsWith('propose_') && !failed[b.id]){
-        const v = cardView(b.name, b.input || {}); if (!v) return;
-        const st = chat.cards[b.id];
-        items.push(html`<div key=${'c' + b.id} class=${'ai-card' + (st ? ' ' + st : '')}>
-          <span class="cat-sub">${v.kind}${v.badge && html` <span class=${'src src-' + (v.badge === 'usda' ? 'usda' : v.badge === 'label' ? 'off' : 'ai')}>${v.badge === 'usda' ? 'USDA' : v.badge === 'label' ? 'Label' : 'Estimate'}</span>`}</span>
-          <b class="ai-card-t">${v.title}</b>
-          ${v.lines.filter(Boolean).map((l, k) => html`<span key=${k} class="ai-card-l">${l}</span>`)}
-          ${v.total && html`<span class="ai-card-total">${v.total}</span>`}
-          ${st ? html`<span class=${'ai-card-st ' + st}>${st === 'saved' ? '✓ Saved' : 'Dismissed'}</span>`
-            : html`<div class="btn-row two"><button class="btn btn-ghost sm" onClick=${() => decide(b, false)}>Dismiss</button><button class="btn btn-pop sm" onClick=${() => decide(b, true)}>${v.ok}</button></div>`}
-        </div>`);
-      }
-    });
-  });
-
-  return html`<div class="scrim ai-scrim" onClick=${e => { if (e.target === e.currentTarget) close(); }}>
-    <div class="sheet ai-sheet" role="dialog" aria-modal="true" aria-label="Assistant">
-      <div class="ai-head">
-        <span class="ai-mark"><${Ico} d=${UI.spark} size=${18} sw=${2}/></span><h2 class="grow">Assistant</h2>
-        ${chat.messages.length > 0 && html`<button class="link" disabled=${busy} onClick=${newChat}>New chat</button>`}
-        <button class="icon-btn" aria-label="Close assistant" onClick=${close}><${Ico} d=${UI.x}/></button>
-      </div>
-      <div class="ai-body">
-        ${items.length === 0 && !busy && html`<div class="ai-empty">
-          <p class="hint">Ask about your food, targets, weight or workouts. I can also add foods (from a description or a photo), build meals and routines, and log what you ate. You confirm everything before it’s saved.</p>
-          ${SUGGEST.map(s => html`<button key=${s} class="row-btn" onClick=${() => s.startsWith('Add a food') ? fileRef.current && fileRef.current.click() : send(s)}>${s}</button>`)}
-        </div>`}
-        ${items}
-        ${busy && html`<div class="bubble ai">${live ? md(live) : html`<span class="typing"><i></i><i></i><i></i></span>`}</div>`}
-        ${err && html`<p class="status bad">${err}</p>`}
-        ${note && html`<p class="hint">${note}</p>`}
-        <div ref=${endRef}></div>
-      </div>
-      ${photos.length > 0 && html`<div class="ai-photos">${photos.map((p, i) => html`<span key=${i} class="ai-photo"><img src=${'data:image/jpeg;base64,' + p} alt="Photo to send"/><button aria-label="Remove photo" onClick=${() => setPhotos(photos.filter((_, j) => j !== i))}><${Ico} d=${UI.x} size=${14} sw=${3}/></button></span>`)}</div>`}
-      <div class="ai-input">
-        <button class="icon-btn" aria-label="Add a photo" disabled=${busy || photos.length >= 3} onClick=${() => fileRef.current && fileRef.current.click()}><${Ico} d=${UI.camera} size=${22}/></button>
-        <textarea ref=${inputRef} rows="1" placeholder="Ask or tell me what to add…" value=${text} onInput=${e => { setText(e.target.value); e.target.style.height = 'auto'; e.target.style.height = Math.min(120, e.target.scrollHeight) + 'px'; }}
-          onKeyDown=${e => { if (e.key === 'Enter' && !e.shiftKey && matchMedia('(min-width:960px)').matches){ e.preventDefault(); send(); } }}></textarea>
-        ${busy ? html`<button class="ai-send stop" aria-label="Stop" onClick=${stop}><span class="sq"></span></button>`
-          : html`<button class="ai-send" aria-label="Send" disabled=${!text.trim() && !photos.length} onClick=${() => send()}><${Ico} d=${UI.up} size=${20} sw=${3}/></button>`}
-        <input ref=${fileRef} type="file" accept="image/*" multiple hidden onChange=${addPhotos}/>
-      </div>
-    </div>
-  </div>`;
+  } catch (e){
+    if (stopped) return;
+    throw new Error(e && e.message && !(e instanceof Anthropic.APIError) ? e.message : aiError(Anthropic, e));
+  }
 }
 
 /* Light formatting: paragraphs, "- " bullets and **bold** */
-function md(t){
+export function md(t){
   const out = [], lines = t.split('\n');
   let list = null;
   const inline = s => s.split(/(\*\*[^*]+\*\*)/g).map((p, i) => p.startsWith('**') && p.endsWith('**') ? html`<b key=${i}>${p.slice(2, -2)}</b>` : p);

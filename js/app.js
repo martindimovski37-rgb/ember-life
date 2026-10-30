@@ -4,12 +4,13 @@ import { store, sync, deviceGet, deviceSet } from './store.js';
 import { plannerCtx, PlannerTab, RequiredSheet } from './planner.js';
 import { DietTab, TargetsForm, dayTotals, targetsFor, kc, g1 } from './diet.js';
 import { GymTab, WorkoutBar, workoutsList, SOUNDS, playSound } from './gym.js';
-import { AssistantButton, AssistantChat } from './assistant.js';
+import { EmberView } from './ember.js';
+import { VOICES, emberVoice, createMouth, unlockAudio } from './voice.js';
 import { AI_MODELS, aiModel, claude, aiError } from './claude.js';
 import { pageFade } from './fx.js';
 
-export const VERSION = '1.27';
-const TABS = [['today', 'Today', UI.sun], ['planner', 'Planner', UI.grid], ['diet', 'Diet', UI.diet], ['gym', 'Gym', UI.gym], ['settings', 'Settings', UI.gear]];
+export const VERSION = '1.28';
+const TABS = [['today', 'Today', UI.sun], ['planner', 'Planner', UI.grid], ['diet', 'Diet', UI.diet], ['gym', 'Gym', UI.gym], ['ember', 'Ember', UI.spark], ['settings', 'Settings', UI.gear]];
 const ALL_TABS = TABS.map(t => t[0]);
 
 export function App(){
@@ -18,7 +19,6 @@ export function App(){
   const [ui, setUiState] = useState({ sub: 'plan', edit: null, energy: null, focusAct: null, dsub: 'log', dedit: null, ddate: null, gview: null });
   const [toast, setToast] = useState(null);
   const [sheet, setSheet] = useState(null);
-  const [aiOpen, setAiOpen] = useState(false);
   const [today, setToday] = useState(dayKey());
   const toastTimer = useRef(null);
 
@@ -32,6 +32,8 @@ export function App(){
     if (settings.theme === 'light' || settings.theme === 'dark') r.setAttribute('data-theme', settings.theme);
     else r.removeAttribute('data-theme');
   }, [settings.theme]);
+
+  useEffect(() => { document.body.classList.toggle('ember-on', tab === 'ember'); }, [tab]);
 
   const showToast = (text, action) => {
     clearTimeout(toastTimer.current);
@@ -57,6 +59,7 @@ export function App(){
   else if (tab === 'diet') body = html`<${DietTab} app=${app} ui=${ui} setUi=${setUi}/>`;
   else if (tab === 'gym') body = html`<${GymTab} app=${app} ui=${ui} setUi=${setUi}/>`;
   else if (tab === 'settings') body = html`<${SettingsView} app=${app}/>`;
+  else if (tab === 'ember') body = html`<${EmberView}/>`;
   else body = html`<${TodayView} app=${app}/>`;
 
   const showSetbar = tab === 'planner' && !ui.edit && (ui.sub || 'plan') === 'plan' && !p.cur.set && p.picks.length > 0;
@@ -69,8 +72,6 @@ export function App(){
       <main class="main">${body}</main>
     </div>
     ${!(tab === 'gym' && ui.gview && ui.gview.type === 'workout') && html`<${WorkoutBar} onOpen=${() => { setTab('gym'); setUi({ gview: { type: 'workout' } }); try { history.replaceState(null, '', '#gym'); } catch (e){} scrollTop(); }}/>`}
-    ${!aiOpen && !showSetbar && html`<${AssistantButton} raised=${!!store.get('gym/active')} onOpen=${() => setAiOpen(true)}/>`}
-    ${aiOpen && html`<${AssistantChat} app=${app} close=${() => setAiOpen(false)}/>`}
     ${showSetbar && html`<div class="setbar"><button class="btn btn-pop" onClick=${() => p.setPlan(false)}>${'Set today’s plan · ' + p.picks.length}</button></div>`}
     <nav class="tabbar" aria-label="Main">
       <div class="tabbar-inner">
@@ -170,6 +171,19 @@ function TodayView({ app }){
 }
 
 /* ---------- Settings ---------- */
+/* Ember's voice: tap one to hear it */
+let sampler = null;
+function VoiceCard({ settings }){
+  const cur = emberVoice(), hasKey = !!deviceGet().elevenKey;
+  const pick = id => { unlockAudio(); store.set('settings/app', Object.assign({}, settings, { emberVoice: id })); (sampler = sampler || createMouth()).stop(); setTimeout(() => sampler.say('Hi, I’m Ember. What did you eat today?'), 50); };
+  return html`<section class="card">
+    <h2 class="card-title">Ember’s voice</h2>
+    <div class="list">${VOICES.map(([id, name, sub]) => { const on = cur === id; return html`<button key=${id} class="act-pick" aria-pressed=${String(on)} onClick=${() => pick(id)}>
+      <span class="col grow"><span class="row-title">${name}</span><span class="row-sub wrap">${sub}</span></span><span class=${'radio' + (on ? ' on' : '')}></span></button>`; })}</div>
+    <p class="hint">${hasKey ? 'Tap a voice to hear it.' : 'The natural voices need an ElevenLabs key (API keys below). Until then Ember uses the iPhone voice.'} The ElevenLabs key also lets Ember listen inside the home-screen app if iPhone speech recognition doesn’t work there.</p>
+  </section>`;
+}
+
 const THEMES = [['auto', 'Auto'], ['light', 'Light'], ['dark', 'Dark']];
 const ago = t => {
   if (!t) return 'never';
@@ -202,6 +216,7 @@ function SettingsView({ app }){
         <span class="col grow"><span class="row-title">${name}</span><span class="row-sub wrap">${sub}</span></span><span class=${'radio' + (on ? ' on' : '')}></span></button>`; })}</div>
       <p class="hint">Tap a sound to hear it. It plays through your headphones when they’re connected, otherwise the iPhone speaker, while Ember Life is open.</p>
     </section>
+    <${VoiceCard} settings=${settings}/>
     <section class="card">
       <h2 class="card-title">Daily targets</h2>
       <${TargetsForm} onSaved=${() => showToast('Targets saved.')}/>
@@ -214,7 +229,7 @@ function SettingsView({ app }){
       <div class="list">${AI_MODELS.map(([id, name, sub]) => { const on = aiModel() === id; return html`<button key=${id} class="act-pick" aria-pressed=${String(on)}
         onClick=${() => store.set('settings/app', Object.assign({}, settings, { aiModel: id }))}>
         <span class="col grow"><span class="row-title">${name}</span><span class="row-sub wrap">${sub}</span></span><span class=${'radio' + (on ? ' on' : '')}></span></button>`; })}</div>
-      <p class="hint">Used by the ✦ assistant and food estimates. Costs come out of your Anthropic credit; photos cost a little more than text.</p>
+      <p class="hint">Used by Ember and food estimates. Costs come out of your Anthropic credit; photos cost a little more than text.</p>
     </section>
     <section class="card">
       <h2 class="card-title">Put it on your iPhone home screen</h2>
@@ -335,9 +350,10 @@ function KeysCard({ showToast }){
   const dev = deviceGet();
   const [usda, setUsda] = useState(dev.usdaKey || '');
   const [claudeKey, setClaudeKey] = useState(dev.claudeKey || '');
+  const [eleven, setEleven] = useState(dev.elevenKey || '');
   const [test, setTest] = useState(null);
   const saved = cleanKey(deviceGet().claudeKey);
-  const save = () => { const u = cleanKey(usda), c = cleanKey(claudeKey); deviceSet({ usdaKey: u, claudeKey: c }); setUsda(u); setClaudeKey(c); setTest(null); showToast('Keys saved on this device.'); };
+  const save = () => { const u = cleanKey(usda), c = cleanKey(claudeKey), el = cleanKey(eleven); deviceSet({ usdaKey: u, claudeKey: c, elevenKey: el }); setUsda(u); setClaudeKey(c); setEleven(el); setTest(null); showToast('Keys saved on this device.'); };
   const runTest = async () => {
     setTest({ state: 'busy' });
     let Anthropic = null;
@@ -346,7 +362,7 @@ function KeysCard({ showToast }){
   };
   return html`<section class="card">
     <h2 class="card-title">API keys</h2>
-    <p class="hint">Food lookups use the free USDA key; the AI assistant uses your Claude key. Keys stay on this device and never sync.</p>
+    <p class="hint">Food lookups use the free USDA key; Ember uses your Claude key to think and your ElevenLabs key to talk and listen. Keys stay on this device and never sync.</p>
     <div class="field">
       <label class="label" for="key-usda">USDA FoodData Central</label>
       <input id="key-usda" class="input inset" type="password" placeholder="Free key from api.data.gov" autocomplete="off" autocapitalize="off" spellcheck="false" value=${usda} onInput=${e => setUsda(e.target.value)}/>
@@ -356,6 +372,10 @@ function KeysCard({ showToast }){
       <input id="key-claude" class="input inset" type="password" placeholder="sk-ant-api03-…" autocomplete="off" autocapitalize="off" spellcheck="false" value=${claudeKey} onInput=${e => setClaudeKey(e.target.value)}/>
       ${saved && html`<p class="hint">Saved key: <b class="mono">${keyPreview(saved)}</b></p>`}
       ${saved && !saved.startsWith('sk-ant-api') && html`<p class="warn"><${Ico} d=${UI.alert} size=${16}/>This doesn’t look like an API key. Keys from console.anthropic.com → Settings → API keys start with sk-ant-api03-.</p>`}
+    </div>
+    <div class="field">
+      <label class="label" for="key-eleven">ElevenLabs (Ember’s voice)</label>
+      <input id="key-eleven" class="input inset" type="password" placeholder="sk_…" autocomplete="off" autocapitalize="off" spellcheck="false" value=${eleven} onInput=${e => setEleven(e.target.value)}/>
     </div>
     <div class="btn-row">
       <button class="btn btn-ghost sm" onClick=${save}>Save keys</button>

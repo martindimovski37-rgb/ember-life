@@ -101,7 +101,7 @@ button:disabled{cursor:default; opacity:.45}
 
 /* Tab bar (phone) */
 .tabbar{position:fixed; left:0; right:0; bottom:0; z-index:21; background:var(--card); border-top:1px solid var(--line); padding:4px max(8px, env(safe-area-inset-right, 0px)) calc(4px + env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px))}
-.tabbar-inner{max-width:560px; margin:0 auto; display:grid; grid-template-columns:repeat(5, minmax(0, 1fr))}
+.tabbar-inner{max-width:600px; margin:0 auto; display:grid; grid-template-columns:repeat(6, minmax(0, 1fr))}
 .tab{min-height:54px; border:0; background:transparent; color:var(--muted); font-weight:650; font-size:11px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px}
 .tab[aria-current="page"]{color:var(--accent)}
 .setbar{position:fixed; left:0; right:0; bottom:calc(64px + env(safe-area-inset-bottom, 0px)); padding:0 max(16px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px)); display:flex; justify-content:center; pointer-events:none; z-index:20}
@@ -750,6 +750,59 @@ body{overflow-x:clip}
 /* Rise in: a page's cards rise in one after another when they appear */
 .main .stack > :not(.head):not(.tcards){animation:cardin .45s cubic-bezier(.2,.8,.2,1) backwards}
 .main .stack > :nth-child(2){animation-delay:55ms} .main .stack > :nth-child(3){animation-delay:110ms} .main .stack > :nth-child(4){animation-delay:165ms} .main .stack > :nth-child(5){animation-delay:220ms} .main .stack > :nth-child(6){animation-delay:275ms} .main .stack > :nth-child(7){animation-delay:330ms} .main .stack > :nth-child(8){animation-delay:385ms} .main .stack > :nth-child(9){animation-delay:440ms} .main .stack > :nth-child(10){animation-delay:495ms}
+
+/* ---------- Ember tab: always a black screen with the orb, whatever the theme ---------- */
+body.ember-on, body.ember-on::before{background:#030102}
+body.ember-on .tabbar{background:#0A0606; border-top-color:#241616}
+body.ember-on .tab{color:#7A6662}
+body.ember-on .tab[aria-current="page"]{color:#E0303A}
+.ember-page{position:fixed; inset:0; z-index:20; overflow:hidden; background:#030102; color:#F4ECEA}
+.em-gl{position:absolute; left:0; top:0; width:100%; height:100%; display:block}
+.em-fallback{position:absolute; left:50%; top:38%; width:72vw; height:72vw; transform:translate(-50%,-50%); border-radius:50%; background:radial-gradient(circle, rgba(255,215,210,.95), rgba(224,48,58,.6) 10%, rgba(142,17,11,.3) 40%, rgba(0,0,0,0) 70%)}
+.em-sub{position:absolute; left:22px; right:22px; top:63%; max-height:7.6em; overflow:hidden; text-align:center; font:600 11px/1.9 'Geist Mono', ui-monospace, Menlo, monospace; letter-spacing:.22em; text-transform:uppercase; color:rgba(255,150,120,.92); text-shadow:0 0 8px rgba(255,70,40,.8), 0 0 2px rgba(255,120,90,.9); transition:opacity .25s}
+.em-sub.you{color:rgba(255,205,198,.95); text-shadow:0 0 8px rgba(224,48,58,.8)}
+.em-err{position:absolute; left:22px; right:22px; bottom:calc(158px + env(safe-area-inset-bottom, 0px)); margin:0; text-align:center; font-size:13px; line-height:1.4; color:#FF8A7A; transition:opacity .25s}
+.em-err.in{position:static; text-align:left}
+.em-bar{position:absolute; left:0; right:0; bottom:calc(84px + env(safe-area-inset-bottom, 0px)); display:flex; align-items:center; justify-content:center; gap:26px; transition:opacity .25s}
+.em-mic{width:62px; height:62px; border-radius:50%; border:0; color:#fff; display:flex; align-items:center; justify-content:center; background:radial-gradient(circle at 50% 40%, #E0303A, #760D08); box-shadow:0 0 0 2px rgba(224,48,58,.35), 0 0 26px rgba(224,48,58,.55)}
+.em-mic.paused{background:#1A1012; color:#A8908C; box-shadow:0 0 0 1px #3A2426}
+.em-side{width:44px; height:44px; border-radius:50%; border:0; display:flex; align-items:center; justify-content:center; background:rgba(20,12,12,.85); color:#A8908C; box-shadow:inset 0 0 0 1px #3A2426}
+.ember-page.chatting .em-sub,.ember-page.chatting .em-bar,.ember-page.chatting > .em-err{opacity:0; pointer-events:none}
+.em-chat{position:absolute; left:0; right:0; bottom:calc(58px + env(safe-area-inset-bottom, 0px)); height:66%; display:flex; flex-direction:column; background:rgba(12,6,6,.95); border-top:1px solid #3A2020; border-radius:22px 22px 0 0; box-shadow:0 -12px 40px rgba(0,0,0,.6); transform:translateY(115%); transition:transform .4s cubic-bezier(.2,.8,.2,1); visibility:hidden}
+.ember-page.chatting .em-chat{transform:none; visibility:visible}
+.em-chat-head{display:flex; align-items:center; gap:10px; padding:12px 12px 6px 18px; font:600 10px 'Geist Mono', ui-monospace, Menlo, monospace; letter-spacing:.22em; text-transform:uppercase; color:#FF5A36}
+.em-chat-head span{flex:1}
+.em-link{border:0; background:none; color:#A8908C; font:500 13px var(--font); padding:6px}
+.em-close{width:32px; height:32px; border-radius:50%; border:0; background:#1A1012; color:#A8908C; display:flex; align-items:center; justify-content:center}
+.em-log{flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:4px 16px 12px; display:flex; flex-direction:column; gap:11px}
+.em-empty{margin:8px 0; color:#A8908C; font-size:14px; line-height:1.5}
+.em-day{align-self:center; margin-top:4px; font:600 9px 'Geist Mono', ui-monospace, Menlo, monospace; letter-spacing:.2em; text-transform:uppercase; color:#7A6662}
+.em-me{align-self:flex-end; max-width:86%; display:flex; flex-direction:column; gap:6px; padding:9px 12px; border-radius:16px 16px 4px 16px; background:#2A1012; border:1px solid #4A1C1E; font-size:15px; line-height:1.4}
+.em-me img{max-width:180px; border-radius:8px}
+.em-ai{align-self:flex-start; max-width:92%; font-size:15px; line-height:1.45}
+.em-ai b:first-child{display:block; margin-bottom:3px; font:600 9px 'Geist Mono', ui-monospace, Menlo, monospace; letter-spacing:.2em; text-transform:uppercase; color:#FF5A36}
+.em-ai p{margin:0 0 6px} .em-ai p:last-child{margin:0} .em-ai ul{margin:0 0 6px; padding-left:18px}
+.em-act{align-self:flex-start; display:flex; align-items:center; gap:10px; max-width:94%; padding:9px 12px; border-radius:10px; background:#160B0B; border:1px solid #3A1A1A; font-size:13.5px}
+.em-act i{position:relative; width:20px; height:20px; flex:none; border-radius:50%; background:#8E110B; box-shadow:0 0 10px rgba(224,48,58,.6)}
+.em-act i::after{content:""; position:absolute; left:7px; top:4px; width:4px; height:8px; border:solid #fff; border-width:0 2px 2px 0; transform:rotate(45deg)}
+.em-act span{flex:1; min-width:0}
+.em-act small{display:block; margin-top:1px; font-size:12px; color:#A8908C}
+.em-act button{border:0; background:none; color:#FF6A50; font:600 13px var(--font); padding:6px}
+.em-act.undone{opacity:.55} .em-act.undone i{background:#3A2426; box-shadow:none}
+.em-photos{display:flex; gap:8px; padding:0 14px 8px}
+.em-photos span{position:relative} .em-photos img{width:52px; height:52px; object-fit:cover; border-radius:8px}
+.em-photos button{position:absolute; top:-6px; right:-6px; width:20px; height:20px; border-radius:50%; border:0; background:#3A2426; color:#fff; display:flex; align-items:center; justify-content:center}
+.em-compose{display:flex; align-items:center; gap:7px; padding:10px 12px 12px; border-top:1px solid #241616}
+.em-compose input:not([type=file]){flex:1; min-width:0; height:40px; padding:0 14px; border-radius:20px; border:1px solid #3A2426; background:#140C0C; color:#F4ECEA; font:16px var(--font); outline:none}
+.em-compose input:focus{border-color:#8E110B}
+.em-cbtn{width:40px; height:40px; flex:none; border-radius:50%; border:0; display:flex; align-items:center; justify-content:center; background:#1A1012; color:#A8908C; box-shadow:inset 0 0 0 1px #3A2426}
+.em-cbtn.on{background:radial-gradient(circle at 50% 40%, #E0303A, #760D08); color:#fff; box-shadow:0 0 14px rgba(224,48,58,.6)}
+.em-cbtn.send{background:linear-gradient(135deg, #C22E17, #760D08); color:#fff; box-shadow:none}
+.em-cbtn:disabled{opacity:.45}
+@media (min-width:960px){
+  .ember-page{position:relative; inset:auto; height:calc(100vh - 56px); border-radius:12px}
+  .em-bar{bottom:28px} .em-chat{bottom:0} .em-err{bottom:104px}
+}
 
 @media (prefers-reduced-motion: reduce){
   #splash{display:none}
