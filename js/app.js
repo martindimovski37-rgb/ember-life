@@ -6,11 +6,11 @@ import { DietTab, TargetsForm, dayTotals, targetsFor, kc, g1 } from './diet.js';
 import { GymTab, WorkoutBar, workoutsList, SOUNDS, playSound } from './gym.js';
 import { EmberView } from './ember.js';
 import { VOICES, emberVoice, createMouth, unlockAudio } from './voice.js';
-import { voiceDownloaded, loadVoice, removeVoice } from './kokoro.js';
+import { voiceDownloaded, loadVoice, removeVoice, downloadedKind, bestKind, downloadSize } from './kokoro.js';
 import { AI_MODELS, aiModel, claude, aiError } from './claude.js';
 import { pageFade } from './fx.js';
 
-export const VERSION = '1.33';
+export const VERSION = '1.34';
 const TABS = [['today', 'Today', UI.sun], ['planner', 'Planner', UI.grid], ['diet', 'Diet', UI.diet], ['gym', 'Gym', UI.gym], ['ember', 'Ember', UI.spark], ['settings', 'Settings', UI.gear]];
 const ALL_TABS = TABS.map(t => t[0]);
 
@@ -175,18 +175,28 @@ function TodayView({ app }){
 /* Ember's voice: Kokoro runs on this iPhone after a one-time download. Tap a voice to hear it. */
 let sampler = null;
 function VoiceCard({ settings }){
-  const [have, setHave] = useState(voiceDownloaded);
+  const [have, setHave] = useState(downloadedKind);   // '', 'gpu' (fast) or 'cpu' (small)
   const [pct, setPct] = useState(null);          // download progress, 0..1, while downloading
   const [err, setErr] = useState('');
   const [heard, setHeard] = useState('');        // which voice the last preview actually used, and why
+  const [report, setReport] = useState('');      // the voice test's report
+  const [testing, setTesting] = useState(false);
   const cur = emberVoice();
-  const download = async () => {
+  const runTest = async kind => {
+    if (testing) return; setTesting(true); let text = ''; setReport('');
+    const log = line => { text += line + '\n'; setReport(text); };
+    try { const t = await import('./selftest.js'); kind === 'listen' ? await t.runListenTest(log) : await t.runVoiceTest(log, { askReal: true }); }
+    catch (e){ log('The test itself failed: ' + e.message); }
+    finally { setTesting(false); }
+  };
+  const copyReport = () => { try { navigator.clipboard.writeText(report).then(() => setHeard('Report copied. Paste it to Claude.'), () => {}); } catch (e){} };
+  const download = async want => {
     setErr(''); setPct(0);
-    try { await loadVoice(p => setPct(p)); setHave(true); }
+    try { await loadVoice(p => setPct(p), want); setHave(downloadedKind()); }
     catch (e){ setErr(e.message); }
     finally { setPct(null); }
   };
-  const remove = async () => { await removeVoice(); setHave(false); setHeard(''); };
+  const remove = async () => { await removeVoice(); setHave(''); setHeard(''); };
   const pick = id => {
     unlockAudio(); store.set('settings/app', Object.assign({}, settings, { emberVoice: id }));
     setHeard('');
@@ -198,15 +208,26 @@ function VoiceCard({ settings }){
     <span class="col grow"><span class="row-title">${name}</span><span class="row-sub wrap">${sub}</span></span><span class=${'radio' + (on ? ' on' : '')}></span></button>`; };
   return html`<section class="card">
     <h2 class="card-title">Ember’s voice</h2>
-    ${!have && html`<p class="hint">Ember’s natural voice (Kokoro) runs on this iPhone, free and offline. It’s a one-time download of about 90 MB, so use Wi-Fi. Until then Ember uses the iPhone voice.</p>
-      ${pct == null ? html`<button class="btn btn-solid" onClick=${download}>Download Ember’s voice</button>`
+    ${!have && html`<p class="hint">Ember’s natural voice (Kokoro) runs on this iPhone, free and offline. It’s a one-time download of about ${downloadSize()}, so use Wi-Fi. Until then Ember uses the iPhone voice.</p>
+      ${pct == null ? html`<button class="btn btn-solid" onClick=${() => download()}>Download Ember’s voice</button>`
         : html`<div class="dl"><div class="bar-track"><span class="bar-fill" style=${'width:' + Math.round(pct * 100) + '%'}></span></div><span class="hint">${pct < 1 ? 'Downloading… ' + Math.round(pct * 100) + '%' : 'Getting the voice ready…'}</span></div>`}`}
-    ${have && html`<p class="status"><${Ico} d=${UI.check} size=${16} sw=${3}/>Voice downloaded. It works offline.</p>`}
+    ${have && html`<p class="status"><${Ico} d=${UI.check} size=${16} sw=${3}/>${have === 'gpu' ? 'Fast voice downloaded (runs on the graphics chip). Works offline.' : 'Voice downloaded (small version). Works offline.'}</p>`}
+    ${have === 'cpu' && bestKind() === 'gpu' && (pct == null
+      ? html`<p class="hint">This iPhone can run the fast version, which talks without pauses. It’s a ${downloadSize('gpu')} download, so use Wi-Fi.</p><button class="btn btn-solid" onClick=${() => download('gpu')}>Switch to the fast voice</button>`
+      : html`<div class="dl"><div class="bar-track"><span class="bar-fill" style=${'width:' + Math.round(pct * 100) + '%'}></span></div><span class="hint">${pct < 1 ? 'Downloading… ' + Math.round(pct * 100) + '%' : 'Getting the voice ready…'}</span></div>`)}
     ${err && html`<p class="status bad">${err}</p>`}
     <div class="list">${VOICES.map(row)}</div>
     ${heard && html`<p class=${'status' + (heard === 'Kokoro' ? '' : ' bad')}>Playing: ${heard}</p>`}
     <p class="hint">Tap a voice to hear it.${have ? '' : ' The natural voices play after the download.'}</p>
-    ${have && html`<button class="link" onClick=${remove}>Remove the download (frees about 90 MB)</button>`}
+    ${have && html`<button class="link" onClick=${remove}>Remove the voice download (frees the space)</button>`}
+    <span class="label">Something not working?</span>
+    <div class="btn-row">
+      <button class="btn btn-ghost sm" disabled=${testing} onClick=${() => runTest('voice')}>${testing ? 'Testing…' : 'Run the voice test'}</button>
+      <button class="btn btn-ghost sm" disabled=${testing} onClick=${() => runTest('listen')}>Test listening</button>
+    </div>
+    <p class="hint">The voice test times every step and asks Ember three questions (about 2 cents, nothing is saved). The listening test records when the microphone switches on and off while you say one sentence.</p>
+    ${report && html`<pre class="test-report">${report}</pre>
+      ${!testing && html`<button class="btn btn-ghost sm" onClick=${copyReport}>Copy report</button>`}`}
   </section>`;
 }
 

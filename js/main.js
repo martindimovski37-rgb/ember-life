@@ -9,6 +9,8 @@ render(html`<${App}/>`, root);
 endSplash();
 installIgnite();
 preloadOrb();   /* build Ember's orb quietly in the background so its tab opens instantly */
+/* start Ember's voice in the background too, so it's ready before you talk to it */
+import('./kokoro.js').then(k => { if (k.voiceDownloaded()) setTimeout(() => k.loadVoice().catch(() => {}), 2500); });
 
 /* iPhone ignores "no zoom" in the page settings, so block pinch-zoom gestures directly */
 ['gesturestart', 'gesturechange'].forEach(t => document.addEventListener(t, e => e.preventDefault(), { passive: false }));

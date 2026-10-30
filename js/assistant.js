@@ -252,12 +252,13 @@ export function actionLine(u){
 /* text: what the user said or typed. spoken: true when it came from the voice.
    say(text) is called with each finished sentence of Ember's reply as soon as it's written, so speaking starts right away.
    live(text) streams the reply as it is written. changed(chat) after every step. Returns a stop function via onStop. */
-export async function askEmber({ text, photos = [], spoken, say, live, changed, onStop }){
+export async function askEmber({ text, photos = [], spoken, say, live, changed, onStop, test }){
   const now = new Date().toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   const content = photos.map(d => ({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: d } }))
     .concat([{ type: 'text', text: '[' + now + '] ' + (text || 'Here is a photo.') }]);
-  let chat = loadChat(); chat.undo = chat.undo || {};
-  const commit = () => { saveChat(chat); changed && changed(chat); };
+  // test: a one-off question for the voice test, with no history and nothing saved
+  let chat = test ? { messages: [], cards: {}, undo: {} } : loadChat(); chat.undo = chat.undo || {};
+  const commit = () => { if (!test) saveChat(chat); changed && changed(chat); };
   let msgs = chat.messages.concat([{ role: 'user', content }]);
   chat = Object.assign({}, chat, { messages: msgs }); commit();
   const c = await claude(), Anthropic = c.Anthropic;
@@ -294,7 +295,8 @@ export async function askEmber({ text, photos = [], spoken, say, live, changed, 
       for (const u of uses){
         try {
           let out = await runTool(u.name, u.input || {});
-          if (u.name.startsWith('propose_')){
+          if (u.name.startsWith('propose_') && test) out = 'This is only a test, so nothing was saved. Tell the user it would have been added.';
+          else if (u.name.startsWith('propose_')){
             const r = applyCard(u.name, u.input);
             chat.cards = Object.assign({}, chat.cards, { [u.id]: 'saved' }); chat.undo = Object.assign({}, chat.undo, { [u.id]: r.made });
             out = 'Saved. ' + r.msg + ' It shows in the chat with an Undo button.';
