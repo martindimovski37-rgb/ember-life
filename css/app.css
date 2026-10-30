@@ -761,6 +761,7 @@ body.ember-on .tab[aria-current="page"]{color:#E0303A}
 .em-fallback{position:absolute; left:50%; top:38%; width:72vw; height:72vw; transform:translate(-50%,-50%); border-radius:50%; background:radial-gradient(circle, rgba(255,215,210,.95), rgba(224,48,58,.6) 10%, rgba(142,17,11,.3) 40%, rgba(0,0,0,0) 70%)}
 .em-sub{position:absolute; left:22px; right:22px; top:63%; text-align:center; font:600 11px/1.9 'Geist Mono', ui-monospace, Menlo, monospace; letter-spacing:.22em; text-transform:uppercase; color:rgba(255,150,120,.92); text-shadow:0 0 8px rgba(255,70,40,.8), 0 0 2px rgba(255,120,90,.9); transition:opacity .25s}
 .em-sub.you{color:rgba(255,205,198,.95); text-shadow:0 0 8px rgba(224,48,58,.8)}
+.em-sub.hint{color:rgba(244,236,234,.8); text-shadow:none; animation:pulse 1.6s infinite}
 .em-err{position:absolute; left:22px; right:22px; bottom:calc(158px + env(safe-area-inset-bottom, 0px)); margin:0; text-align:center; font-size:13px; line-height:1.4; color:#FF8A7A; transition:opacity .25s}
 .em-err.in{position:static; text-align:left}
 .em-bar{position:absolute; left:0; right:0; bottom:calc(84px + env(safe-area-inset-bottom, 0px)); display:flex; align-items:center; justify-content:center; gap:26px; transition:opacity .25s}

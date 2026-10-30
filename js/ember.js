@@ -21,6 +21,7 @@ export function EmberView(){
   const [text, setText] = useState('');
   const [photos, setPhotos] = useState([]);
   const [noGL, setNoGL] = useState(false);
+  const [needTap, setNeedTap] = useState(false);   // iPhone wants a tap before Ember can carry on
   const holder = useRef(null), orb = useRef(null), mouth = useRef(null), ears = useRef(null), stopAsk = useRef(null), logEnd = useRef(null), fileRef = useRef(null);
   const st = useRef({ listening: false, busy: false });
   st.current.listening = listening; st.current.busy = busy;
@@ -36,12 +37,14 @@ export function EmberView(){
     mouth.current = createMouth({
       onSpeaking: on => { if (on){ ears.current && ears.current.hold(true); setPhase('speak'); } else settle(); },
       onPiece: t => setSub({ who: 'ember', text: t }),   // the subtitle is always the piece being spoken right now
-      onError: m => setErr(m)
+      onError: m => setErr(m),
+      onBlocked: () => { setNeedTap(true); setSub({ who: 'hint', text: 'Tap anywhere so Ember can talk' }); }
     });
     ears.current = createEars({
       onWords: w => { if (w) setSub({ who: 'you', text: w }); },
       onHeard: w => ask(w, true),
-      onError: m => { setErr(m); setListening(false); setPhase('idle'); }
+      onError: m => { setErr(m); setListening(false); setPhase('idle'); },
+      onStuck: () => { setNeedTap(true); setSub({ who: 'hint', text: 'Tap anywhere to keep talking' }); }
     });
     claude().catch(() => {});   // load the Claude connection now, so the first answer starts sooner
     // the orb is built once in the background and kept; here it's just put on screen and woken up
@@ -79,10 +82,16 @@ export function EmberView(){
   };
 
   const toggleMic = () => {
-    unlockAudio();
+    unlockAudio(); mouth.current.unblock(); setNeedTap(false);
     if (listening){ setListening(false); ears.current.stop(); if (!busy && !mouth.current.busy()) setPhase('idle'); setSub({ who: '', text: '' }); return; }
     if (!canListen()){ setErr('Talking isn’t available in this browser. Add an ElevenLabs key in Settings so Ember can listen, or type in the chat.'); setChatOpen(true); return; }
     setErr(''); setListening(true); ears.current.start(); if (!busy && !mouth.current.busy()) setPhase('listen');
+  };
+  /* one tap anywhere on the screen, when iPhone asked for it, carries the conversation on */
+  const tapToGo = e => {
+    if (!needTap || e.target.closest('button, input, .em-chat')) return;
+    unlockAudio(); mouth.current.unblock(); setNeedTap(false); setSub({ who: '', text: '' });
+    if (st.current.listening){ ears.current.resume(); if (!st.current.busy && !mouth.current.busy()) setPhase('listen'); }
   };
   const hush = () => { mouth.current.stop(); stopAsk.current && stopAsk.current(); setSub({ who: '', text: '' }); settle(); };
   const send = () => { const q = text.trim(); if ((!q && !photos.length) || busy) return; setText(''); ask(q, false); };
@@ -113,7 +122,7 @@ export function EmberView(){
     });
   });
 
-  return html`<div class=${'ember-page' + (chatOpen ? ' chatting' : '')}>
+  return html`<div class=${'ember-page' + (chatOpen ? ' chatting' : '')} onClick=${tapToGo}>
     <div ref=${holder} class="em-holder"></div>
     ${noGL && html`<div class="em-fallback" aria-hidden="true"></div>`}
     <div class=${'em-sub ' + sub.who} aria-live="polite">${sub.text}</div>
