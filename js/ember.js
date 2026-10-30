@@ -2,12 +2,12 @@
 import { html, useState, useEffect, useRef, Ico, UI } from './lib.js';
 import { askEmber, emberChat, actionLine, md, photoData } from './assistant.js';
 import { createMouth, createEars, unlockAudio, canListen } from './voice.js';
-import { loadThree, createOrb } from './orb.js';
+import { loadThree, getOrb } from './orb.js';
+import { claude } from './claude.js';
 
 const CHAT = 'M20 11.5a7.5 7.5 0 0 1-10.9 6.7L4 19.5l1.3-4.6A7.5 7.5 0 1 1 20 11.5z';
 const MIC = 'M9 3h6v11H9z M5 11a7 7 0 0 0 14 0 M12 18v3';
 const DOWN = 'M6 9l6 6 6-6';
-const short = t => t.length > 150 ? t.slice(0, 147).replace(/\s+\S*$/, '') + '…' : t;
 
 export function EmberView(){
   const [phase, setPhase] = useState('idle');          // idle, listen, think, speak
@@ -21,7 +21,7 @@ export function EmberView(){
   const [text, setText] = useState('');
   const [photos, setPhotos] = useState([]);
   const [noGL, setNoGL] = useState(false);
-  const cv = useRef(null), orb = useRef(null), mouth = useRef(null), ears = useRef(null), stopAsk = useRef(null), logEnd = useRef(null), fileRef = useRef(null);
+  const holder = useRef(null), orb = useRef(null), mouth = useRef(null), ears = useRef(null), stopAsk = useRef(null), logEnd = useRef(null), fileRef = useRef(null);
   const st = useRef({ listening: false, busy: false });
   st.current.listening = listening; st.current.busy = busy;
 
@@ -35,6 +35,7 @@ export function EmberView(){
     let dead = false;
     mouth.current = createMouth({
       onSpeaking: on => { if (on){ ears.current && ears.current.hold(true); setPhase('speak'); } else settle(); },
+      onPiece: t => setSub({ who: 'ember', text: t }),   // the subtitle is always the piece being spoken right now
       onError: m => setErr(m)
     });
     ears.current = createEars({
@@ -42,12 +43,18 @@ export function EmberView(){
       onHeard: w => ask(w, true),
       onError: m => { setErr(m); setListening(false); setPhase('idle'); }
     });
+    claude().catch(() => {});   // load the Claude connection now, so the first answer starts sooner
+    // the orb is built once in the background and kept; here it's just put on screen and woken up
     loadThree().then(() => {
       if (dead) return;
-      try { orb.current = createOrb(cv.current, () => phase0() === 'speak' ? mouth.current.level() : phase0() === 'listen' ? ears.current.level() : null); }
-      catch (e){ setNoGL(true); }
+      try {
+        const o = getOrb(); orb.current = o;
+        holder.current.appendChild(o.canvas);
+        o.setLevel(() => phase0() === 'speak' ? mouth.current.level() : phase0() === 'listen' ? ears.current.level() : null);
+        o.setState(phase0()); o.setChat(false); o.resume();
+      } catch (e){ setNoGL(true); }
     }).catch(() => setNoGL(true));
-    return () => { dead = true; orb.current && orb.current.destroy(); mouth.current.stop(); ears.current.stop(); stopAsk.current && stopAsk.current(); };
+    return () => { dead = true; if (orb.current){ orb.current.pause(); orb.current.canvas.remove(); } mouth.current.stop(); ears.current.stop(); stopAsk.current && stopAsk.current(); };
   }, []);
   /* the orb reads the phase every frame, so keep the latest one where it can see it */
   const phaseRef = useRef(phase); phaseRef.current = phase; const phase0 = () => phaseRef.current;
@@ -64,7 +71,7 @@ export function EmberView(){
     try {
       await askEmber({
         text: q, photos: pics, spoken,
-        say: words => { setSub({ who: 'ember', text: short(words) }); if (spoken) mouth.current.say(words); },
+        say: words => { if (spoken) mouth.current.say(words); },
         live: setLive, changed: setChat, onStop: f => { stopAsk.current = f; }
       });
     } catch (e){ setErr(e.message); if (spoken) mouth.current.say(e.message); }
@@ -107,7 +114,7 @@ export function EmberView(){
   });
 
   return html`<div class=${'ember-page' + (chatOpen ? ' chatting' : '')}>
-    <canvas ref=${cv} class="em-gl" aria-hidden="true"></canvas>
+    <div ref=${holder} class="em-holder"></div>
     ${noGL && html`<div class="em-fallback" aria-hidden="true"></div>`}
     <div class=${'em-sub ' + sub.who} aria-live="polite">${sub.text}</div>
     ${err && !chatOpen && html`<p class="em-err">${err}</p>`}

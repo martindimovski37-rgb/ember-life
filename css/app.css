@@ -682,17 +682,17 @@ body{overflow-x:clip}
 
 /* opening screen: the tile pops in, the three rings draw, the flame grows */
 #splash{position:fixed; inset:0; z-index:100; background:var(--bg); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; pointer-events:none}
-#splash.gone{animation:sp-out .45s ease-in forwards}
+#splash.gone{animation:sp-out .25s ease-in forwards}
 .sp-logo{width:96px; height:96px}
 .sp-logo svg{width:100%; height:100%; display:block}
-.sp-logo .tile{fill:var(--lg-bg); transform-origin:75px 75px; transform:scale(.6); opacity:0; animation:sp-tile .45s cubic-bezier(.2,.8,.2,1) forwards}
+.sp-logo .tile{fill:var(--lg-bg); transform-origin:75px 75px; transform:scale(.6); opacity:0; animation:sp-tile .28s cubic-bezier(.2,.8,.2,1) forwards}
 .sp-logo .glow{fill:var(--lg-glow)}
-.sp-logo .arc{fill:none; stroke-width:11; stroke-linecap:round; stroke-dasharray:100; stroke-dashoffset:100; animation:sp-draw .55s cubic-bezier(.4,0,.2,1) forwards}
-.sp-logo .arc1{stroke:var(--lg-a1); animation-delay:.3s} .sp-logo .arc2{stroke:var(--lg-a2); animation-delay:.48s} .sp-logo .arc3{stroke:var(--lg-a3); animation-delay:.66s}
-.sp-logo .flame{transform-origin:75px 104px; transform:scaleY(0); animation:sp-grow .6s .9s cubic-bezier(.3,1.5,.5,1) forwards, sp-flicker 1.2s 1.5s ease-in-out infinite}
+.sp-logo .arc{fill:none; stroke-width:11; stroke-linecap:round; stroke-dasharray:100; stroke-dashoffset:100; animation:sp-draw .36s cubic-bezier(.4,0,.2,1) forwards}
+.sp-logo .arc1{stroke:var(--lg-a1); animation-delay:.14s} .sp-logo .arc2{stroke:var(--lg-a2); animation-delay:.25s} .sp-logo .arc3{stroke:var(--lg-a3); animation-delay:.36s}
+.sp-logo .flame{transform-origin:75px 104px; transform:scaleY(0); animation:sp-grow .38s .5s cubic-bezier(.3,1.5,.5,1) forwards}
 .sp-logo .f1{fill:var(--lg-f1)} .sp-logo .f2{fill:var(--lg-f2)} .sp-logo .f3{fill:var(--lg-f3)}
 .sp-word{display:flex; font-family:var(--font); font-size:20px; font-weight:700; letter-spacing:-.01em; color:var(--fg)}
-.sp-word span{display:inline-block; animation:sp-rise .5s cubic-bezier(.2,.8,.2,1) both; animation-delay:calc(1.15s + var(--i) * 30ms)}
+.sp-word span{display:inline-block; animation:sp-rise .32s cubic-bezier(.2,.8,.2,1) both; animation-delay:calc(.55s + var(--i) * 20ms)}
 @keyframes sp-tile{to{transform:scale(1); opacity:1}}
 @keyframes sp-draw{to{stroke-dashoffset:0}}
 @keyframes sp-grow{to{transform:scaleY(1)}}
@@ -725,14 +725,14 @@ body{overflow-x:clip}
 .tcard:nth-child(2) .ring-v{animation-delay:.31s} .tcard:nth-child(3) .ring-v{animation-delay:.47s}
 @keyframes ring-sweep{from{stroke-dasharray:0 var(--c)}}
 @keyframes ring-cool{0%,35%{stroke:var(--hot1)} 65%{stroke:var(--hot2)}}
-.ring-svg{animation:ring-halo 2.6s 1.8s ease-in-out infinite}
+.ring-svg{animation:ring-halo 2.2s 1.4s ease-in-out}
 @keyframes ring-halo{0%,100%{filter:drop-shadow(0 0 2px rgba(255,90,54,.3))} 50%{filter:drop-shadow(0 0 8px rgba(255,90,54,.9))}}
 .num-heat{animation:num-heat 1.8s .15s ease-out backwards}
 @keyframes num-heat{0%{color:var(--hot1); text-shadow:0 0 10px var(--hot2)} 70%{color:var(--hot2); text-shadow:0 0 6px rgba(255,90,54,.6)}}
 .tc-bar i,.bar-fill{position:relative; overflow:hidden; animation:bar-grow .95s .35s cubic-bezier(.2,.8,.2,1) backwards}
 .tc-m:nth-child(2) .tc-bar i{animation-delay:.48s} .tc-m:nth-child(3) .tc-bar i{animation-delay:.61s}
 @keyframes bar-grow{from{width:0}}
-.tc-bar i::after,.bar-fill::after{content:""; position:absolute; top:0; bottom:0; left:0; width:45%; background:linear-gradient(90deg, transparent, rgba(255,244,214,.9), transparent); transform:translateX(-120%); animation:bar-shimmer 2s 1.4s ease-in-out infinite}
+.tc-bar i::after,.bar-fill::after{content:""; position:absolute; top:0; bottom:0; left:0; width:45%; background:linear-gradient(90deg, transparent, rgba(255,244,214,.9), transparent); transform:translateX(-120%); animation:bar-shimmer 1.6s 1.2s ease-in-out}
 @keyframes bar-shimmer{60%,100%{transform:translateX(330%)}}
 .tc-dot.on,.tc-day.on i{animation:dot-fire 1.1s backwards; animation-delay:calc(1.1s + var(--i, 0) * 80ms)}
 @keyframes dot-fire{0%{transform:scale(0); background:var(--hot1); box-shadow:0 0 14px 4px var(--hot2)} 40%{transform:scale(1.2)} 100%{transform:none}}
@@ -740,16 +740,16 @@ body{overflow-x:clip}
 /* Heat up: trained muscles light up lightest first, each white-hot then cooling; 12+ set muscles keep a slow glow */
 .bm-heat{animation:bm-heat 1.1s ease-out backwards; animation-delay:var(--d)}
 @keyframes bm-heat{0%{fill:var(--bm-0)} 30%{fill:var(--hot1)} 60%{fill:var(--hot2)}}
-.bm-glow{opacity:0; animation:bm-glow 2.4s ease-in-out infinite; animation-delay:var(--gd)}
+.bm-glow{opacity:.15; animation:bm-glow 2.4s ease-in-out backwards; animation-delay:var(--gd)}
 @keyframes bm-glow{0%,100%{opacity:.15} 50%{opacity:.7}}
 /* Hot wire: chart lines draw in white-hot, cool to their colour, then glow softly */
-.wline{animation:w-draw 1.2s .15s cubic-bezier(.4,0,.2,1) backwards, w-cool 2s .15s ease-out backwards, w-glow 2.6s 2.2s ease-in-out infinite}
+.wline{animation:w-draw 1.2s .15s cubic-bezier(.4,0,.2,1) backwards, w-cool 2s .15s ease-out backwards, w-glow 2.2s 1.6s ease-in-out}
 @keyframes w-draw{from{stroke-dasharray:0 100} to{stroke-dasharray:100 0}}
 @keyframes w-cool{0%,35%{stroke:var(--hot1)} 70%{stroke:var(--hot2)}}
 @keyframes w-glow{0%,100%{filter:drop-shadow(0 0 1px rgba(255,90,54,.3))} 50%{filter:drop-shadow(0 0 6px rgba(255,90,54,.85))}}
 /* Rise in: a page's cards rise in one after another when they appear */
-.main .stack > :not(.head):not(.tcards){animation:cardin .45s cubic-bezier(.2,.8,.2,1) backwards}
-.main .stack > :nth-child(2){animation-delay:55ms} .main .stack > :nth-child(3){animation-delay:110ms} .main .stack > :nth-child(4){animation-delay:165ms} .main .stack > :nth-child(5){animation-delay:220ms} .main .stack > :nth-child(6){animation-delay:275ms} .main .stack > :nth-child(7){animation-delay:330ms} .main .stack > :nth-child(8){animation-delay:385ms} .main .stack > :nth-child(9){animation-delay:440ms} .main .stack > :nth-child(10){animation-delay:495ms}
+.main .stack > :not(.head):not(.tcards){animation:cardin .32s cubic-bezier(.2,.8,.2,1) backwards}
+.main .stack > :nth-child(2){animation-delay:35ms} .main .stack > :nth-child(3){animation-delay:70ms} .main .stack > :nth-child(4){animation-delay:105ms} .main .stack > :nth-child(5){animation-delay:140ms} .main .stack > :nth-child(6){animation-delay:175ms} .main .stack > :nth-child(7){animation-delay:210ms} .main .stack > :nth-child(8){animation-delay:245ms} .main .stack > :nth-child(9){animation-delay:280ms} .main .stack > :nth-child(10){animation-delay:315ms}
 
 /* ---------- Ember tab: always a black screen with the orb, whatever the theme ---------- */
 body.ember-on, body.ember-on::before{background:#030102}
@@ -757,9 +757,9 @@ body.ember-on .tabbar{background:#0A0606; border-top-color:#241616}
 body.ember-on .tab{color:#7A6662}
 body.ember-on .tab[aria-current="page"]{color:#E0303A}
 .ember-page{position:fixed; inset:0; z-index:20; overflow:hidden; background:#030102; color:#F4ECEA}
-.em-gl{position:absolute; left:0; top:0; width:100%; height:100%; display:block}
+.em-holder,.em-gl{position:absolute; left:0; top:0; width:100%; height:100%; display:block}
 .em-fallback{position:absolute; left:50%; top:38%; width:72vw; height:72vw; transform:translate(-50%,-50%); border-radius:50%; background:radial-gradient(circle, rgba(255,215,210,.95), rgba(224,48,58,.6) 10%, rgba(142,17,11,.3) 40%, rgba(0,0,0,0) 70%)}
-.em-sub{position:absolute; left:22px; right:22px; top:63%; max-height:7.6em; overflow:hidden; text-align:center; font:600 11px/1.9 'Geist Mono', ui-monospace, Menlo, monospace; letter-spacing:.22em; text-transform:uppercase; color:rgba(255,150,120,.92); text-shadow:0 0 8px rgba(255,70,40,.8), 0 0 2px rgba(255,120,90,.9); transition:opacity .25s}
+.em-sub{position:absolute; left:22px; right:22px; top:63%; text-align:center; font:600 11px/1.9 'Geist Mono', ui-monospace, Menlo, monospace; letter-spacing:.22em; text-transform:uppercase; color:rgba(255,150,120,.92); text-shadow:0 0 8px rgba(255,70,40,.8), 0 0 2px rgba(255,120,90,.9); transition:opacity .25s}
 .em-sub.you{color:rgba(255,205,198,.95); text-shadow:0 0 8px rgba(224,48,58,.8)}
 .em-err{position:absolute; left:22px; right:22px; bottom:calc(158px + env(safe-area-inset-bottom, 0px)); margin:0; text-align:center; font-size:13px; line-height:1.4; color:#FF8A7A; transition:opacity .25s}
 .em-err.in{position:static; text-align:left}

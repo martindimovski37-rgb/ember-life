@@ -1,7 +1,7 @@
-/* Ember Life offline cache. Network first so updates show up right away; the cache is the fallback
-   when there's no signal (e.g. in the gym). Own files are always re-checked with the server (GitHub Pages
-   otherwise lets phones reuse a file for 10 minutes). Bump VERSION on every release. */
-const VERSION = 'ember-life-30';
+/* Ember Life offline cache. The app's own files come straight from the phone, so it opens instantly even on a
+   weak signal, and are refreshed in the background. A release (bump VERSION) installs a fresh copy of everything,
+   and the app reloads once into it. */
+const VERSION = 'ember-life-32';
 const SHELL = ['./', 'index.html', 'css/app.css', 'vendor/preact-htm.umd.js', 'js/main.js', 'js/app.js', 'js/lib.js', 'js/fx.js', 'js/orb.js', 'js/voice.js', 'js/ember.js', 'js/store.js', 'js/planner.js', 'js/diet.js', 'js/gym.js', 'js/bodymap.js', 'js/claude.js', 'js/assistant.js', 'vendor/anthropic-sdk.mjs', 'vendor/node-buffer.mjs', 'data/exercises.json', 'vendor/zxing.min.js', 'vendor/three/three.min.js', 'vendor/three/CopyShader.js', 'vendor/three/LuminosityHighPassShader.js', 'vendor/three/EffectComposer.js', 'vendor/three/RenderPass.js', 'vendor/three/ShaderPass.js', 'vendor/three/UnrealBloomPass.js',
   'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'sounds/boxing.m4a'];
 
@@ -22,10 +22,11 @@ self.addEventListener('fetch', e => {
     return;
   }
   if (!own && !font) return;   /* GitHub, USDA, Open Food Facts, Claude: always live */
-  e.respondWith(
-    fetch(own ? e.request.url : e.request, own ? { cache: 'no-cache' } : undefined).then(res => {
-      if (res.ok || res.type === 'opaque'){ const copy = res.clone(); caches.open(VERSION).then(c => c.put(e.request, copy)); }
-      return res;
-    }).catch(() => caches.match(e.request, { ignoreSearch: true }).then(r => r || (e.request.mode === 'navigate' ? caches.match('index.html') : undefined)))
-  );
+  const fresh = fetch(own ? e.request.url : e.request, own ? { cache: 'no-cache' } : undefined).then(res => {
+    if (res.ok || res.type === 'opaque'){ const copy = res.clone(); caches.open(VERSION).then(c => c.put(e.request, copy)); }
+    return res;
+  });
+  e.waitUntil(fresh.then(() => {}, () => {}));
+  e.respondWith(caches.open(VERSION).then(c => c.match(e.request, { ignoreSearch: true })).then(hit => hit
+    || fresh.catch(() => e.request.mode === 'navigate' ? caches.match('index.html') : undefined)));
 });

@@ -68,7 +68,7 @@ export function endSplash(){
   const sp = document.getElementById('splash'), root = document.documentElement;
   const done = () => { root.classList.remove('splashing'); window.dispatchEvent(new Event('splashdone')); };
   if (!sp){ done(); return; }
-  const wait = calm() ? 0 : Math.max(0, 2500 - performance.now());
+  const wait = calm() ? 0 : Math.max(0, 1250 - performance.now());
   setTimeout(() => {
     sp.classList.add('gone'); root.classList.add('intro'); done();
     setTimeout(() => { sp.remove(); root.classList.remove('intro'); }, 1200);

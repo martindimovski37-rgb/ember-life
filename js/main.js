@@ -1,12 +1,14 @@
 import { html, render } from './lib.js';
 import { App } from './app.js';
 import { endSplash, installIgnite } from './fx.js';
+import { preloadOrb } from './orb.js';
 
 const root = document.getElementById('app');
 root.textContent = '';
 render(html`<${App}/>`, root);
 endSplash();
 installIgnite();
+preloadOrb();   /* build Ember's orb quietly in the background so its tab opens instantly */
 
 /* iPhone ignores "no zoom" in the page settings, so block pinch-zoom gestures directly */
 ['gesturestart', 'gesturechange'].forEach(t => document.addEventListener(t, e => e.preventDefault(), { passive: false }));

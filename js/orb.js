@@ -12,8 +12,20 @@ export function loadThree(){
   })), Promise.resolve()));
 }
 
-/* level() returns how loud the voice is right now (0..1), or null to let the orb animate on its own */
-export function createOrb(cv, level){
+/* One orb for the whole app: built in the background after the app opens, then kept, so the Ember tab opens instantly. */
+let inst = null;
+export function getOrb(){
+  if (!inst){ const cv = document.createElement('canvas'); cv.className = 'em-gl'; cv.setAttribute('aria-hidden', 'true'); inst = createOrb(cv); inst.canvas = cv; }
+  return inst;
+}
+export function preloadOrb(){
+  const go = () => loadThree().then(() => { try { getOrb().warm(); } catch (e){} }).catch(() => {});
+  setTimeout(() => ('requestIdleCallback' in window) ? requestIdleCallback(go, { timeout: 3000 }) : go(), 2000);
+}
+
+/* level() (set with setLevel) returns how loud the voice is right now (0..1), or null to let the orb animate on its own */
+function createOrb(cv){
+  let level = null;
   const THREE = window.THREE;
   const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: false, powerPreference: 'high-performance' });
   renderer.setClearColor(0x030102, 1);
@@ -35,7 +47,7 @@ export function createOrb(cv, level){
   const line = (pts, seed) => { const n = pts.length - 1; for (let i = 0; i < n; i++){ pos.push(...pts[i], ...pts[i + 1]); aR.push(Math.hypot(...pts[i]), Math.hypot(...pts[i + 1])); aSeed.push(seed, seed); aU.push(i / n, (i + 1) / n); } };
   const unit = () => { const u = R() * 2 - 1, th = R() * TAU, q = Math.sqrt(1 - u * u); return [q * Math.cos(th), u, q * Math.sin(th)]; };
   // threads that wander outward from inside; a few become long curly tendrils that stray far outside
-  for (let k = 0; k < 1300; k++){
+  for (let k = 0; k < 850; k++){
     let p = unit().map(v => v * Math.pow(R(), .55) * .9), d = unit();
     const seed = R() * 100, tendril = R() < .06, steps = tendril ? 50 : 12 + (R() * 18 | 0), pts = [p];
     for (let i = 0; i < steps; i++){
@@ -48,7 +60,7 @@ export function createOrb(cv, level){
     if (pts.length > 2) line(pts, seed);
   }
   // nodes joined to their nearest neighbours with slightly curved links
-  const nodes = Array.from({ length: 460 }, (_, i) => unit().map(v => v * (i < 300 ? .78 + R() * .2 : Math.pow(R(), .7) * .75)));
+  const nodes = Array.from({ length: 320 }, (_, i) => unit().map(v => v * (i < 210 ? .78 + R() * .2 : Math.pow(R(), .7) * .75)));
   nodes.forEach((a, i) => {
     nodes.map((b, j) => [j, Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2])]).filter(([j]) => j > i).sort((x, y) => x[1] - y[1]).slice(0, 2).forEach(([j]) => {
       const b = nodes[j], m = a.map((v, k) => (v + b[k]) / 2 + (R() - .5) * .14), pts = [];
@@ -87,7 +99,7 @@ export function createOrb(cv, level){
 
   /* ---------- white sparks shooting from the centre to the edge and back ---------- */
   const zp = [], zd = [], zs = [], ze = [];
-  for (let i = 0; i < 520; i++){ const d = unit(), s = R() * 100; [0, 1].forEach(e => { zp.push(0, 0, 0); zd.push(...d); zs.push(s); ze.push(e); }); }
+  for (let i = 0; i < 360; i++){ const d = unit(), s = R() * 100; [0, 1].forEach(e => { zp.push(0, 0, 0); zd.push(...d); zs.push(s); ze.push(e); }); }
   const sparkMat = new THREE.ShaderMaterial({
     uniforms: U, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
     vertexShader: `
@@ -129,8 +141,8 @@ export function createOrb(cv, level){
 
   /* ---------- specks: the rim, floating dust, and brighter nodes where links meet ---------- */
   const dp = [], ds = [], db = [];
-  for (let i = 0; i < 7500; i++){
-    const [x, y, z] = unit(), rim = i < 4800, stray = i >= 7100;
+  for (let i = 0; i < 4200; i++){
+    const [x, y, z] = unit(), rim = i < 2700, stray = i >= 3950;
     const r = stray ? reach(x, y, z) * (1.05 + R() * .5) : rim ? reach(x, y, z) * (.93 + R() * .09) : Math.pow(R(), .6) * .9;
     dp.push(x * r, y * r, z * r); ds.push(R() * 100); db.push(0);
   }
@@ -199,7 +211,7 @@ export function createOrb(cv, level){
   /* size: the orb fills about three-quarters of the width and sits in the upper part of the screen */
   let W = 0, H = 0, baseY = 0, spanH = 1, lift = 0;
   const fit = () => {
-    const w = cv.clientWidth, h = cv.clientHeight, dpr = Math.min(2, devicePixelRatio || 1);
+    const w = cv.clientWidth, h = cv.clientHeight, dpr = Math.min(1.5, devicePixelRatio || 1);
     if (!w || !h || (w === W && h === H)) return; W = w; H = h;
     renderer.setPixelRatio(dpr); renderer.setSize(w, h, false); composer.setPixelRatio(dpr); composer.setSize(w, h);
     bloom.resolution.set(w * dpr / 2, h * dpr / 2);
@@ -210,23 +222,24 @@ export function createOrb(cv, level){
   };
 
   /* states: idle, listen, think, speak */
-  let state = 'idle', chat = false, amp = 0, spin = 0, flare = 0, last = performance.now(), raf = 0, alive = true;
+  let state = 'idle', chat = false, amp = 0, spin = 0, flare = 0, last = performance.now(), raf = 0, running = false;
   const frame = now => {
-    if (!alive) return;
+    if (!running){ raf = 0; return; }
     raf = requestAnimationFrame(frame);
     if (document.hidden) return;
     fit();
     const dt = Math.min(.05, (now - last) / 1000), t = now / 1000; last = now;
     const lv = level ? level() : null;
-    const tg = lv != null && (state === 'speak' || state === 'listen') ? .12 + lv * .95
+    const tg = lv != null && (state === 'speak' || state === 'listen') ? .08 + lv * 1.15
       : state === 'idle' ? .06 + .03 * Math.sin(t * 1.4)
       : state === 'think' ? .25 + .08 * Math.sin(t * 7)
       : state === 'listen' ? .15 + .45 * Math.abs(Math.sin(t * 7.3) * Math.sin(t * 2.3 + .5))
       : .2 + .8 * Math.abs(Math.sin(t * 9.1) * Math.sin(t * 3.7)) + R() * .1;
-    amp += (tg - amp) * .18; flare = Math.max(0, flare - dt * .9);
+    amp += (tg - amp) * (lv != null && tg > amp ? .5 : .2); flare = Math.max(0, flare - dt * .9);
     spin += dt * ({ idle: .06, listen: .12, think: .55, speak: .16 })[state];
     U.uTime.value = t * (state === 'think' ? 1.8 : 1); U.uAmp.value = amp + flare * .5;
-    lift += ((chat ? 1 : 0) - lift) * .08; orb.position.y = baseY + lift * spanH * .23; const k = 1 - lift * .52; orb.scale.set(k, k, .45 * k);
+    // the orb spreads out with the loudness of the voice
+    lift += ((chat ? 1 : 0) - lift) * .08; orb.position.y = baseY + lift * spanH * .23; const k = (1 - lift * .52) * (1 + Math.max(0, amp - .1) * .16); orb.scale.set(k, k, .45 * k);
     orb.rotation.z = spin * .6; orb.rotation.x = Math.sin(t * .23) * .22; orb.rotation.y = Math.sin(t * .17 + 1) * .26;
     const a = amp + flare * .6;
     core.scale.setScalar(.38 + a * .55 + Math.sin(t * 2) * .02); core.material.opacity = .55 + a * .45;
@@ -235,10 +248,13 @@ export function createOrb(cv, level){
     film.uniforms.uTime.value = t; film.uniforms.uAmp.value = amp;
     composer.render();
   };
-  raf = requestAnimationFrame(frame);
   return {
     setState(s){ if (s === 'speak' && state !== 'speak') flare = 1; state = s; },
     setChat(on){ chat = on; },
-    destroy(){ alive = false; cancelAnimationFrame(raf); scene.traverse(o => { o.geometry && o.geometry.dispose(); o.material && o.material.dispose(); }); composer.renderTarget1.dispose(); composer.renderTarget2.dispose(); renderer.dispose(); }
+    setLevel(fn){ level = fn; },
+    resume(){ if (running) return; running = true; last = performance.now(); raf = requestAnimationFrame(frame); },
+    pause(){ running = false; if (raf) cancelAnimationFrame(raf); raf = 0; },
+    /* draw one small frame off screen so the shaders are compiled before the tab is opened */
+    warm(){ if (running) return; try { renderer.setSize(64, 64, false); composer.setSize(64, 64); composer.render(); W = H = 0; } catch (e){} }
   };
 }

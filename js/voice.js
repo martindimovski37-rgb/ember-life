@@ -24,47 +24,61 @@ export function unlockAudio(){
 }
 const rms = (an, b) => { an.getByteTimeDomainData(b); let sum = 0; for (let i = 0; i < b.length; i++){ const v = (b[i] - 128) / 128; sum += v * v; } return Math.sqrt(sum / b.length); };
 
-/* text read aloud: no markdown, lists become sentences */
-export const speakable = t => String(t || '').replace(/\*\*/g, '').replace(/^\s*[-•*]\s+/gm, '').replace(/\n+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+/* text read aloud: no markdown, lists become sentences, never the "(spoken)" tag or a timestamp */
+export const speakable = t => String(t || '').replace(/\*\*/g, '').replace(/\[[^\]]*\]/g, '').replace(/\((spoken|typed)\)/gi, '').replace(/^\s*[-•*]\s+/gm, '').replace(/\n+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+/* split into pieces short enough to show as one subtitle: sentences, and long sentences at commas */
+export function pieces(t){
+  const out = [];
+  speakable(t).split(/(?<=[.!?…]["')\]]?)\s+/).forEach(sn => {
+    let x = sn.trim();
+    while (x.length > 110){ const soft = Math.max(x.lastIndexOf(', ', 100), x.lastIndexOf('; ', 100)), cut = soft > 40 ? soft : x.lastIndexOf(' ', 100); out.push(x.slice(0, cut + 1).trim()); x = x.slice(cut + 1).trim(); }
+    if (x) out.push(x);
+  });
+  return out;
+}
 
-/* ---------- speaking: a queue, so "Adding … now" finishes before the result is read ---------- */
-export function createMouth({ onSpeaking, onError } = {}){
-  const queue = []; let playing = false, current = null, gen = 0, deviceTalking = false;
-  const done = () => { playing = false; current = null; next(); };
+/* ---------- speaking: each piece is fetched as soon as it's ready and played in order, without gaps ---------- */
+export function createMouth({ onSpeaking, onPiece, onError } = {}){
+  const queue = []; let playing = false, current = null, gen = 0, deviceTalking = false, wordAt = 0, warned = false;
+  const useEleven = () => emberVoice() !== 'device' && !!elevenKey() && !!ctx;
+  const fetchAudio = text => fetch('https://api.elevenlabs.io/v1/text-to-speech/' + emberVoice() + '?output_format=mp3_44100_128', {
+    method: 'POST', headers: { 'xi-api-key': elevenKey(), 'Content-Type': 'application/json', Accept: 'audio/mpeg' },
+    body: JSON.stringify({ text, model_id: 'eleven_flash_v2_5', voice_settings: { stability: .5, similarity_boost: .75 } })
+  }).then(r => { if (!r.ok) throw new Error(r.status === 401 ? 'ElevenLabs rejected the key.' : r.status === 402 || r.status === 429 ? 'ElevenLabs credits or limit reached.' : 'ElevenLabs had a problem (' + r.status + ').'); return r.arrayBuffer(); })
+    .then(b => ctx.decodeAudioData(b));
   const viaDevice = text => new Promise(res => {
     if (!('speechSynthesis' in window)) return res();
-    const u = new SpeechSynthesisUtterance(text); u.rate = 1.02; u.pitch = .9;
+    const u = new SpeechSynthesisUtterance(text); u.rate = 1.04; u.pitch = .9;
     const en = speechSynthesis.getVoices().filter(v => /^en/i.test(v.lang));
     u.voice = en.find(v => /Daniel|Arthur|Oliver/i.test(v.name)) || en[0] || null;
-    deviceTalking = true; u.onend = u.onerror = () => { deviceTalking = false; res(); };
+    u.onboundary = () => { wordAt = performance.now(); };
+    deviceTalking = true; wordAt = performance.now(); u.onend = u.onerror = () => { deviceTalking = false; res(); };
     speechSynthesis.speak(u);
   });
-  const viaEleven = async (text, id, my) => {
-    const r = await fetch('https://api.elevenlabs.io/v1/text-to-speech/' + id + '?output_format=mp3_44100_128', {
-      method: 'POST', headers: { 'xi-api-key': elevenKey(), 'Content-Type': 'application/json', Accept: 'audio/mpeg' },
-      body: JSON.stringify({ text, model_id: 'eleven_flash_v2_5', voice_settings: { stability: .5, similarity_boost: .75 } })
-    });
-    if (!r.ok) throw new Error(r.status === 401 ? 'ElevenLabs rejected the key.' : r.status === 402 || r.status === 429 ? 'ElevenLabs credits or limit reached.' : 'ElevenLabs had a problem (' + r.status + ').');
-    const audio = await ctx.decodeAudioData(await r.arrayBuffer());
-    if (my !== gen) return;
-    await new Promise(res => { const s = ctx.createBufferSource(); s.buffer = audio; s.connect(analyser); s.onended = res; current = s; s.start(0); });
-  };
+  const playBuffer = (audio, my) => new Promise(res => { if (my !== gen) return res(); const s = ctx.createBufferSource(); s.buffer = audio; s.connect(analyser); s.onended = res; current = s; s.start(0); });
   const next = async () => {
-    if (playing || !queue.length){ if (!playing) onSpeaking && onSpeaking(false); return; }
+    if (playing) return;
+    if (!queue.length){ onSpeaking && onSpeaking(false); return; }
     playing = true; onSpeaking && onSpeaking(true);
-    const text = queue.shift(), my = gen, id = emberVoice();
+    const item = queue.shift(), my = gen;
+    onPiece && onPiece(item.text);
     try {
-      if (id !== 'device' && elevenKey() && ctx) await viaEleven(text, id, my);
-      else await viaDevice(text);
-    } catch (e){ onError && onError(e.message + ' Using the iPhone voice for now.'); if (my === gen) await viaDevice(text); }
-    if (my === gen) done();
+      if (item.audio) await playBuffer(await item.audio, my);
+      else await viaDevice(item.text);
+    } catch (e){
+      if (!warned){ warned = true; onError && onError(e.message + ' Using the iPhone voice for now.'); }
+      if (my === gen) await viaDevice(item.text);
+    }
+    current = null;
+    if (my !== gen) return;
+    playing = false; next();
   };
   return {
-    say(text){ const t = speakable(text); if (!t) return; queue.push(t); next(); },
+    say(text){ pieces(text).forEach(t => { const item = { text: t, audio: useEleven() ? fetchAudio(t) : null }; if (item.audio) item.audio.catch(() => {}); queue.push(item); }); next(); },
     stop(){ gen++; queue.length = 0; try { current && current.stop(); } catch (e){} try { speechSynthesis.cancel(); } catch (e){} playing = false; current = null; deviceTalking = false; onSpeaking && onSpeaking(false); },
     busy: () => playing || queue.length > 0,
-    /* how loud Ember is right now; null when the iPhone voice is talking (the orb then animates by itself) */
-    level: () => current && analyser ? Math.min(1, rms(analyser, buf) * 4) : deviceTalking ? null : 0
+    /* how loud Ember is right now: the real sound with ElevenLabs; with the iPhone voice, a pulse on every word */
+    level: () => current && analyser ? Math.min(1, rms(analyser, buf) * 4.5) : deviceTalking ? .3 + .7 * Math.max(0, 1 - (performance.now() - wordAt) / 260) : 0
   };
 }
 
@@ -85,7 +99,7 @@ export function createEars({ onWords, onHeard, onError }){
       bump = performance.now(); let interim = '';
       for (let i = e.resultIndex; i < e.results.length; i++){ const r = e.results[i]; if (r.isFinal) heard += r[0].transcript + ' '; else interim += r[0].transcript; }
       onWords((heard + interim).trim());
-      clearTimeout(timer); timer = setTimeout(() => finish(heard + interim), interim ? 1600 : 900);
+      clearTimeout(timer); timer = setTimeout(() => finish(heard + interim), interim ? 1100 : 650);
     };
     rec.onerror = e => {
       if (e.error === 'no-speech' || e.error === 'aborted') return;
@@ -117,7 +131,7 @@ export function createEars({ onWords, onHeard, onError }){
           mr.onstop = async () => { const long = performance.now() - startedAt > 600, blob = new Blob(chunks, { type: mr.mimeType || 'audio/mp4' }); mr = null;
             if (!long || !on) return; onWords('…'); try { finish(await transcribe(blob)); } catch (er){ onWords(''); onError(er.message); } };
           mr.start(); onWords('…'); }
-      } else if (mr){ if (!quietSince) quietSince = now; else if (now - quietSince > 1000) mr.stop(); }
+      } else if (mr){ if (!quietSince) quietSince = now; else if (now - quietSince > 700) mr.stop(); }
     }, 60);
   };
   return {

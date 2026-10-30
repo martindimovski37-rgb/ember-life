@@ -23,7 +23,7 @@ How to work:
 - Photos: if it's a nutrition label, read the exact values and convert them to per 100 g. If it's a plate of food, identify the foods, look them up, estimate the portions and say the portions are estimates. If it's a package front without a label, ask for a photo of the nutrition table or suggest the barcode scanner in Diet → Foods.
 - When proposing a meal or a day of eating, keep the totals close to the user's targets and mention how they compare.
 - For routines, use search_exercises to find real exercise ids.
-- Your replies are read aloud when the user is talking to you, marked (spoken). Then answer in one to three short sentences: no lists, no markdown, numbers written plainly, no emoji.
+- When the user is talking to you out loud, your reply is read aloud: answer in one to three short sentences, no lists, no markdown, numbers written plainly, no emoji. Never mention how the message arrived.
 - When the user typed instead, keep answers short and easy to read on a phone: plain sentences and short "- " bullet lists, no tables, no headings.`;
 
 const T = (name, description, properties, required) => ({ name, description, eager_input_streaming: true, input_schema: { type: 'object', properties, required: required || [] } });
@@ -250,31 +250,41 @@ export function actionLine(u){
   return v ? { title: v.kind === 'Daily log' ? v.title.replace(/^Log to /, 'Added to ') : v.kind + ': ' + v.title, detail: v.total ? v.total.replace(/^Total: /, '') : v.lines.filter(Boolean)[0] || '' } : null;
 }
 /* text: what the user said or typed. spoken: true when it came from the voice.
-   say(text) is called with each finished piece of Ember's reply (first what it is about to do, then the result).
+   say(text) is called with each finished sentence of Ember's reply as soon as it's written, so speaking starts right away.
    live(text) streams the reply as it is written. changed(chat) after every step. Returns a stop function via onStop. */
 export async function askEmber({ text, photos = [], spoken, say, live, changed, onStop }){
   const now = new Date().toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   const content = photos.map(d => ({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: d } }))
-    .concat([{ type: 'text', text: '[' + now + ']' + (spoken ? ' (spoken)' : '') + ' ' + (text || 'Here is a photo.') }]);
+    .concat([{ type: 'text', text: '[' + now + '] ' + (text || 'Here is a photo.') }]);
   let chat = loadChat(); chat.undo = chat.undo || {};
   const commit = () => { saveChat(chat); changed && changed(chat); };
   let msgs = chat.messages.concat([{ role: 'user', content }]);
   chat = Object.assign({}, chat, { messages: msgs }); commit();
-  const c = await claude(), Anthropic = c.Anthropic, model = aiModel();
+  const c = await claude(), Anthropic = c.Anthropic;
+  // talking needs quick answers: Opus is swapped for the faster Sonnet when the request was spoken
+  const model = spoken && aiModel() === 'claude-opus-5-5' ? 'claude-sonnet-5-5' : aiModel();
+  // whether the message was spoken goes in a second system block, so the main one stays cached and nothing leaks into the chat
+  const system = [{ type: 'text', text: SYSTEM }, { type: 'text', text: spoken ? 'The user is talking to you out loud right now. Reply for listening: one to three short spoken sentences.' : 'The user typed this message.' }];
   let stopped = false, stream = null;
   onStop && onStop(() => { stopped = true; try { stream && stream.abort(); } catch (e){} });
   try {
     for (let step = 0; step < MAX_STEPS && !stopped; step++){
-      stream = c.client.beta.messages.stream(Object.assign({ model, max_tokens: 16000, system: SYSTEM, tools: TOOLS, messages: msgs, cache_control: { type: 'ephemeral' } }, fallbackParams(model)));
-      if (live) stream.on('text', (_, snapshot) => live(snapshot));
+      stream = c.client.beta.messages.stream(Object.assign({ model, max_tokens: 16000, system, tools: TOOLS, messages: msgs, cache_control: { type: 'ephemeral' } }, fallbackParams(model)));
+      // hand over each sentence the moment it's complete
+      let acc = '', said = 0;
+      const flush = all => {
+        const rest = acc.slice(said); let end = -1;
+        if (all) end = rest.length; else { const m = [...rest.matchAll(/[.!?…]["')\]]?(?=\s)|\n/g)].pop(); if (m) end = m.index + m[0].length; }
+        if (end > 0){ const piece = rest.slice(0, end).trim(); said += end; if (piece && say) say(piece); }
+      };
+      stream.on('text', (delta, snapshot) => { live && live(snapshot); acc += delta; flush(false); });
       let msg;
       try { msg = await stream.finalMessage(); }
       catch (e){ if (e instanceof Anthropic.APIError || stream.aborted || stopped) throw e; continue; }   /* a tool input that didn't parse: ask again */
       live && live('');
       msgs = msgs.concat([{ role: 'assistant', content: msg.content }]);
       chat = Object.assign({}, chat, { messages: msgs }); commit();
-      const words = msg.content.filter(b => b.type === 'text').map(b => b.text).join(' ').trim();
-      if (words && say) say(words);
+      flush(true);
       if (msg.stop_reason === 'refusal') throw new Error('Ember declined to answer that one. Try asking another way.');
       if (msg.stop_reason === 'pause_turn') continue;
       if (msg.stop_reason === 'max_tokens') throw new Error('The answer got too long. Ask for something smaller.');

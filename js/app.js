@@ -9,7 +9,7 @@ import { VOICES, emberVoice, createMouth, unlockAudio } from './voice.js';
 import { AI_MODELS, aiModel, claude, aiError } from './claude.js';
 import { pageFade } from './fx.js';
 
-export const VERSION = '1.28';
+export const VERSION = '1.29';
 const TABS = [['today', 'Today', UI.sun], ['planner', 'Planner', UI.grid], ['diet', 'Diet', UI.diet], ['gym', 'Gym', UI.gym], ['ember', 'Ember', UI.spark], ['settings', 'Settings', UI.gear]];
 const ALL_TABS = TABS.map(t => t[0]);
 
