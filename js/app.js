@@ -9,7 +9,7 @@ import { VOICES, emberVoice, createMouth, unlockAudio } from './voice.js';
 import { AI_MODELS, aiModel, claude, aiError } from './claude.js';
 import { pageFade } from './fx.js';
 
-export const VERSION = '1.30';
+export const VERSION = '1.31';
 const TABS = [['today', 'Today', UI.sun], ['planner', 'Planner', UI.grid], ['diet', 'Diet', UI.diet], ['gym', 'Gym', UI.gym], ['ember', 'Ember', UI.spark], ['settings', 'Settings', UI.gear]];
 const ALL_TABS = TABS.map(t => t[0]);
 
@@ -171,16 +171,42 @@ function TodayView({ app }){
 }
 
 /* ---------- Settings ---------- */
-/* Ember's voice: tap one to hear it */
+/* Ember's voice: a few good ElevenLabs voices, every voice in your ElevenLabs account, or any voice ID from their library. Tap one to hear it. */
 let sampler = null;
 function VoiceCard({ settings }){
-  const cur = emberVoice(), hasKey = !!deviceGet().elevenKey;
-  const pick = id => { unlockAudio(); store.set('settings/app', Object.assign({}, settings, { emberVoice: id })); (sampler = sampler || createMouth()).stop(); setTimeout(() => sampler.say('Hi, I’m Ember. What did you eat today?'), 50); };
+  const key = String(deviceGet().elevenKey || '').trim();
+  const [mine, setMine] = useState(null);      // voices from your ElevenLabs account
+  const [note, setNote] = useState('');
+  const [custom, setCustom] = useState('');
+  const cur = emberVoice();
+  useEffect(() => {
+    if (!key){ setMine(null); return; }
+    let dead = false;
+    fetch('https://api.elevenlabs.io/v1/voices', { headers: { 'xi-api-key': key } })
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then(d => { if (!dead){ setMine((d.voices || []).filter(v => !VOICES.some(p => p[0] === v.voice_id))); setNote(''); } })
+      .catch(st => { if (!dead){ setMine([]); setNote(st === 401 || st === 403 ? 'To list all your ElevenLabs voices here, give the key Voices → Read access in ElevenLabs. The voices above work without it.' : 'Couldn’t load your ElevenLabs voices right now.'); } });
+    return () => { dead = true; };
+  }, [key]);
+  const pick = (id, name) => {
+    unlockAudio(); store.set('settings/app', Object.assign({}, settings, { emberVoice: id, emberVoiceName: name }));
+    (sampler = sampler || createMouth()).stop(); setTimeout(() => sampler.say('Hi, I’m Ember. What did you eat today?'), 50);
+  };
+  const row = (id, name, sub) => { const on = cur === id; return html`<button key=${id} class="act-pick" aria-pressed=${String(on)} onClick=${() => pick(id, name)}>
+    <span class="col grow"><span class="row-title">${name}</span><span class="row-sub wrap">${sub}</span></span><span class=${'radio' + (on ? ' on' : '')}></span></button>`; };
+  const known = VOICES.some(v => v[0] === cur) || (mine || []).some(v => v.voice_id === cur);
+  const useCustom = () => { const id = custom.trim(); if (!/^[A-Za-z0-9]{10,40}$/.test(id)) { setNote('That doesn’t look like a voice ID. In ElevenLabs, open a voice and copy its ID.'); return; } setCustom(''); pick(id, 'Voice ' + id.slice(0, 6)); };
   return html`<section class="card">
     <h2 class="card-title">Ember’s voice</h2>
-    <div class="list">${VOICES.map(([id, name, sub]) => { const on = cur === id; return html`<button key=${id} class="act-pick" aria-pressed=${String(on)} onClick=${() => pick(id)}>
-      <span class="col grow"><span class="row-title">${name}</span><span class="row-sub wrap">${sub}</span></span><span class=${'radio' + (on ? ' on' : '')}></span></button>`; })}</div>
-    <p class="hint">${hasKey ? 'Tap a voice to hear it.' : 'The natural voices need an ElevenLabs key (API keys below). Until then Ember uses the iPhone voice.'} The ElevenLabs key also lets Ember listen inside the home-screen app if iPhone speech recognition doesn’t work there.</p>
+    ${!key && html`<p class="hint">The natural voices need an ElevenLabs key (above). Until then Ember uses the iPhone voice.</p>`}
+    <div class="list">${VOICES.map(([id, name, sub]) => row(id, name, sub))}
+      ${!known && cur !== 'device' && row(cur, settings.emberVoiceName || 'Your voice', 'From the ElevenLabs library')}</div>
+    ${mine && mine.length > 0 && html`<span class="label">Your ElevenLabs voices</span>
+      <div class="list">${mine.slice(0, 40).map(v => row(v.voice_id, v.name, [v.labels && v.labels.accent, v.labels && (v.labels.description || v.labels.descriptive), v.category === 'premade' ? '' : v.category].filter(Boolean).join(' · ') || 'ElevenLabs voice'))}</div>`}
+    <span class="label">Any other voice</span>
+    <div class="btn-row"><input class="input inset grow" placeholder="Paste a voice ID" autocomplete="off" autocapitalize="off" spellcheck="false" value=${custom} onInput=${e => { setCustom(e.target.value); setNote(''); }}/><button class="btn btn-ghost sm" onClick=${useCustom}>Use</button></div>
+    ${note && html`<p class="hint">${note}</p>`}
+    <p class="hint">Tap a voice to hear it. To use one from the ElevenLabs Voice Library, add it to your voices in ElevenLabs (it then shows up here), or copy its voice ID and paste it above.</p>
   </section>`;
 }
 
@@ -216,7 +242,6 @@ function SettingsView({ app }){
         <span class="col grow"><span class="row-title">${name}</span><span class="row-sub wrap">${sub}</span></span><span class=${'radio' + (on ? ' on' : '')}></span></button>`; })}</div>
       <p class="hint">Tap a sound to hear it. It plays through your headphones when they’re connected, otherwise the iPhone speaker, while Ember Life is open.</p>
     </section>
-    <${VoiceCard} settings=${settings}/>
     <section class="card">
       <h2 class="card-title">Daily targets</h2>
       <${TargetsForm} onSaved=${() => showToast('Targets saved.')}/>
@@ -224,6 +249,7 @@ function SettingsView({ app }){
     <${SyncCard} showToast=${showToast}/>
     <${BackupCard} app=${app}/>
     <${KeysCard} showToast=${showToast}/>
+    <${VoiceCard} settings=${settings}/>
     <section class="card">
       <h2 class="card-title">Assistant model</h2>
       <div class="list">${AI_MODELS.map(([id, name, sub]) => { const on = aiModel() === id; return html`<button key=${id} class="act-pick" aria-pressed=${String(on)}
