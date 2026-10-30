@@ -9,7 +9,7 @@ import { VOICES, emberVoice, createMouth, unlockAudio } from './voice.js';
 import { AI_MODELS, aiModel, claude, aiError } from './claude.js';
 import { pageFade } from './fx.js';
 
-export const VERSION = '1.31';
+export const VERSION = '1.32';
 const TABS = [['today', 'Today', UI.sun], ['planner', 'Planner', UI.grid], ['diet', 'Diet', UI.diet], ['gym', 'Gym', UI.gym], ['ember', 'Ember', UI.spark], ['settings', 'Settings', UI.gear]];
 const ALL_TABS = TABS.map(t => t[0]);
 
@@ -178,6 +178,7 @@ function VoiceCard({ settings }){
   const [mine, setMine] = useState(null);      // voices from your ElevenLabs account
   const [note, setNote] = useState('');
   const [custom, setCustom] = useState('');
+  const [heard, setHeard] = useState('');        // which voice the last preview actually used, and why
   const cur = emberVoice();
   useEffect(() => {
     if (!key){ setMine(null); return; }
@@ -190,7 +191,10 @@ function VoiceCard({ settings }){
   }, [key]);
   const pick = (id, name) => {
     unlockAudio(); store.set('settings/app', Object.assign({}, settings, { emberVoice: id, emberVoiceName: name }));
-    (sampler = sampler || createMouth()).stop(); setTimeout(() => sampler.say('Hi, I’m Ember. What did you eat today?'), 50);
+    setHeard('');
+    sampler && sampler.stop();
+    sampler = createMouth({ onEngine: setHeard });
+    setTimeout(() => sampler.say('Hi, I’m Ember. What did you eat today?'), 50);
   };
   const row = (id, name, sub) => { const on = cur === id; return html`<button key=${id} class="act-pick" aria-pressed=${String(on)} onClick=${() => pick(id, name)}>
     <span class="col grow"><span class="row-title">${name}</span><span class="row-sub wrap">${sub}</span></span><span class=${'radio' + (on ? ' on' : '')}></span></button>`; };
@@ -205,6 +209,7 @@ function VoiceCard({ settings }){
       <div class="list">${mine.slice(0, 40).map(v => row(v.voice_id, v.name, [v.labels && v.labels.accent, v.labels && (v.labels.description || v.labels.descriptive), v.category === 'premade' ? '' : v.category].filter(Boolean).join(' · ') || 'ElevenLabs voice'))}</div>`}
     <span class="label">Any other voice</span>
     <div class="btn-row"><input class="input inset grow" placeholder="Paste a voice ID" autocomplete="off" autocapitalize="off" spellcheck="false" value=${custom} onInput=${e => { setCustom(e.target.value); setNote(''); }}/><button class="btn btn-ghost sm" onClick=${useCustom}>Use</button></div>
+    ${heard && html`<p class=${'status' + (/^ElevenLabs$/.test(heard) ? '' : ' bad')}>Playing: ${heard}</p>`}
     ${note && html`<p class="hint">${note}</p>`}
     <p class="hint">Tap a voice to hear it. To use one from the ElevenLabs Voice Library, add it to your voices in ElevenLabs (it then shows up here), or copy its voice ID and paste it above.</p>
   </section>`;

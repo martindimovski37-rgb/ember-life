@@ -40,14 +40,19 @@ export function pieces(t){
 }
 
 /* ---------- speaking: each piece is fetched as soon as it's ready and played in order, without gaps ---------- */
-export function createMouth({ onSpeaking, onPiece, onError, onBlocked } = {}){
+export function createMouth({ onSpeaking, onPiece, onError, onBlocked, onEngine } = {}){
   const queue = []; let playing = false, current = null, gen = 0, deviceTalking = false, wordAt = 0, warned = false, blocked = false;
   const useEleven = () => emberVoice() !== 'device' && !!elevenKey() && !!ctx;
   const fetchAudio = text => fetch('https://api.elevenlabs.io/v1/text-to-speech/' + emberVoice() + '?output_format=mp3_44100_128', {
     method: 'POST', headers: { 'xi-api-key': elevenKey(), 'Content-Type': 'application/json', Accept: 'audio/mpeg' },
     body: JSON.stringify({ text, model_id: 'eleven_flash_v2_5', voice_settings: { stability: .5, similarity_boost: .75 } })
-  }).then(r => { if (!r.ok) throw new Error(r.status === 401 ? 'ElevenLabs rejected the key.' : r.status === 402 || r.status === 429 ? 'ElevenLabs credits or limit reached.' : 'ElevenLabs had a problem (' + r.status + ').'); return r.arrayBuffer(); })
-    .then(b => ctx.decodeAudioData(b));
+  }).then(async r => {
+    if (r.ok) return r.arrayBuffer();
+    // pass on ElevenLabs' own explanation, so it's clear why the natural voice didn't play
+    let why = ''; try { const d = (await r.json()).detail; why = typeof d === 'string' ? d : d && (d.message || d.status) || ''; } catch (e){}
+    throw new Error('ElevenLabs said: ' + (why || 'error') + ' (' + r.status + ').');
+  })
+    .then(b => new Promise((ok, no) => { const p = ctx.decodeAudioData(b, ok, () => no(new Error('The ElevenLabs audio couldn’t be played on this device.'))); if (p && p.then) p.then(ok, () => {}); }));
   // the iPhone voice; if iPhone blocks it, it never starts and never reports back, so give up after a moment instead of freezing
   const viaDevice = text => new Promise(res => {
     if (!('speechSynthesis' in window)) return res();
@@ -74,10 +79,11 @@ export function createMouth({ onSpeaking, onPiece, onError, onBlocked } = {}){
     const item = queue.shift(), my = gen;
     onPiece && onPiece(item.text);
     try {
-      if (item.audio) await playBuffer(await item.audio, my);
-      else await viaDevice(item.text);
+      if (item.audio){ const a = await item.audio; onEngine && onEngine('ElevenLabs'); await playBuffer(a, my); }
+      else { onEngine && onEngine(!elevenKey() ? 'iPhone voice (no ElevenLabs key saved)' : emberVoice() === 'device' ? 'iPhone voice' : 'iPhone voice (the audio player wasn’t started)'); await viaDevice(item.text); }
     } catch (e){
       if (!warned){ warned = true; onError && onError(e.message + ' Using the iPhone voice for now.'); }
+      onEngine && onEngine('iPhone voice, because: ' + e.message);
       if (my === gen) await viaDevice(item.text);
     }
     current = null;
