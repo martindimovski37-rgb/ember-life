@@ -88,7 +88,7 @@ export async function runTool(name, input){
   if (name === 'search_my_foods'){
     const q = String(input.query || '').toLowerCase().trim();
     const list = store.list('foods/').filter(f => !q || (f.name + ' ' + (f.brand || '')).toLowerCase().includes(q)).slice(0, 60);
-    return list.length ? list.map(f => ({ food_id: f.id, name: f.name, brand: f.brand || undefined, state: f.state || 'not specified', per_100g: per100(f) })) : 'No matching foods in the library.';
+    return list.length ? list.map(f => ({ food_id: f.id, name: f.name, brand: f.brand || undefined, state: f.state || 'not specified', per_100g: per100(f), one_piece_g: f.piece > 0 ? f.piece + ' g (one ' + (f.pieceName || 'piece') + ')' : undefined })) : 'No matching foods in the library.';
   }
   if (name === 'list_my_meals'){
     const foods = foodMap();
@@ -175,7 +175,7 @@ function applyCard(name, x){
       if (it.meal_id){ const m = store.get('meals/' + it.meal_id);
         return { id: uid(), slot: x.slot, kind: 'meal', ref: m.id, name: m.name, amount: isNum(it.portions) && it.portions > 0 ? it.portions : 1, unit: mealTotals(m, foods), mealG: m.items.reduce((a, i) => a + (Number(i.g) || 0), 0) }; }
       const f = it.food_id ? foods[it.food_id] : makeFood(it.name, it.new_food);
-      return { id: uid(), slot: x.slot, kind: 'food', ref: f.id, name: f.name, amount: it.grams, unit: { kcal: f.kcal, p: f.p, c: f.c, fat: f.fat } };
+      return Object.assign({ id: uid(), slot: x.slot, kind: 'food', ref: f.id, name: f.name, amount: it.grams, unit: { kcal: f.kcal, p: f.p, c: f.c, fat: f.fat } }, f.piece > 0 ? { piece: f.piece, pieceName: f.pieceName || 'piece' } : {});
     });
     const log = store.get('log/' + date) || { date, entries: [] };
     store.set('log/' + date, Object.assign({}, log, { date, entries: log.entries.concat(entries) }));

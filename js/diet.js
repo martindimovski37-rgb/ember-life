@@ -1,5 +1,6 @@
 /* Diet: food library (per 100 g), lookups (USDA → barcode via Open Food Facts → AI estimate), meal builder.
-   Docs: foods/<id> = { id, name, brand, state: raw|cooked|'', kcal, p, c, fat (per 100 g), source, ref, barcode }
+   Docs: foods/<id> = { id, name, brand, state: raw|cooked|'', kcal, p, c, fat (per 100 g), source, ref, barcode,
+                        piece, pieceName (optional: counted by the piece, like eggs; piece = grams in one) }
          meals/<id> = { id, name, tag, items: [{ id, foodId, g }] }
    Meals only point at foods, so editing a food changes every meal that uses it. */
 import { html, useState, useEffect, useRef, Ico, UI, uid, clone, plural, scrollTop, dayKey, parseKey, fmtShort } from './lib.js';
@@ -23,6 +24,10 @@ export const kc = n => String(Math.round(n));
 const num = s => { const v = parseFloat(String(s == null ? '' : s).replace(',', '.')); return isFinite(v) && v >= 0 ? v : null; };
 const macroLine = m => 'P ' + g1(m.p) + ' · C ' + g1(m.c) + ' · F ' + g1(m.fat);
 const fullLine = m => kc(m.kcal) + ' kcal · ' + macroLine(m);
+/* foods counted by the piece (eggs): amounts are still kept in grams, only shown and typed as a count */
+export const pieceG = f => f && Number(f.piece) > 0 ? Number(f.piece) : 0;
+const pieceWord = (f, n) => (f.pieceName || 'piece') + (n === 1 ? '' : 's');
+export const countLabel = (f, g) => { const n = Math.round(g / pieceG(f) * 10) / 10; return g1(n) + ' ' + pieceWord(f, n); };
 
 export const MEAL_TAGS = [['breakfast', 'Breakfast'], ['lunch', 'Lunch'], ['dinner', 'Dinner'], ['snack', 'Snack']];
 const STATES = [['raw', 'Raw'], ['cooked', 'Cooked'], ['', 'Neither']];
@@ -141,7 +146,7 @@ function FoodRow({ food, onClick, right }){
     <button class="row-main" onClick=${onClick}>
       <span class="col grow">
         <span class="row-title">${food.name}${food.brand && !food.name.toLowerCase().includes(food.brand.toLowerCase()) ? html` <span class="brand">${food.brand}</span>` : ''}</span>
-        <span class="row-sub">${kc(food.kcal)} kcal · ${macroLine(food)} <span class="per">/100 g</span></span>
+        <span class="row-sub">${pieceG(food) ? html`${fullLine(scale(food, pieceG(food)))} <span class="per">/${food.pieceName || 'piece'}</span>` : html`${kc(food.kcal)} kcal · ${macroLine(food)} <span class="per">/100 g</span>`}</span>
       </span>
       ${food.state && html`<span class="pill">${food.state}</span>`}
       ${food.source === 'ai' && html`<span class="src src-ai">Estimate</span>`}
@@ -240,7 +245,7 @@ function FoodFinder({ env, initialQ = '', initialCode, withLibrary, onPick }){
 /* Edit or confirm a food. Label values can be per 100 g or per serving; the app converts. */
 function FoodForm({ initial, onSave, onCancel, saveLabel, extra }){
   const str = v => v === '' || v == null ? '' : g1(Number(v));
-  const [f, setF] = useState(() => ({ name: initial.name || '', brand: initial.brand || '', state: initial.state || '', kcal: initial.kcal === '' ? '' : String(Math.round(initial.kcal || 0)), p: str(initial.p), c: str(initial.c), fat: str(initial.fat) }));
+  const [f, setF] = useState(() => ({ name: initial.name || '', brand: initial.brand || '', state: initial.state || '', kcal: initial.kcal === '' ? '' : String(Math.round(initial.kcal || 0)), p: str(initial.p), c: str(initial.c), fat: str(initial.fat), piece: initial.piece > 0 ? g1(initial.piece) : '', pieceName: initial.pieceName || '' }));
   const [per, setPer] = useState('100');
   const [serving, setServing] = useState('');
   const [err, setErr] = useState('');
@@ -255,7 +260,8 @@ function FoodForm({ initial, onSave, onCancel, saveLabel, extra }){
     if (!ok){ setErr('Enter the serving size in grams.'); return; }
     if ([f.p, f.c, f.fat].some(v => v !== '' && num(v) == null) || (f.kcal !== '' && num(f.kcal) == null)){ setErr('Use numbers only, like 12.5.'); return; }
     if (vals.p + vals.c + vals.fat > 100.5){ setErr('Protein, carbs and fat add up to more than 100 g per 100 g. Check the numbers.'); return; }
-    onSave({ name: f.name.trim(), brand: f.brand.trim(), state: f.state, kcal: Math.round(vals.kcal * 10) / 10, p: Math.round(vals.p * 10) / 10, c: Math.round(vals.c * 10) / 10, fat: Math.round(vals.fat * 10) / 10,
+    if (f.piece !== '' && !(num(f.piece) > 0)){ setErr('Enter how many grams one piece weighs, or leave it empty.'); return; }
+    onSave({ name: f.name.trim(), brand: f.brand.trim(), state: f.state, piece: num(f.piece) || 0, pieceName: num(f.piece) ? (f.pieceName.trim().toLowerCase() || 'piece') : '', kcal: Math.round(vals.kcal * 10) / 10, p: Math.round(vals.p * 10) / 10, c: Math.round(vals.c * 10) / 10, fat: Math.round(vals.fat * 10) / 10,
       source: initial.source || 'manual', ref: initial.ref || '', barcode: initial.barcode || '' });
   };
   const box = (k, label, unit) => html`<label class="mfield"><span class="label">${label}</span><span class="mbox"><input inputmode="decimal" autocomplete="off" placeholder=${k === 'kcal' ? 'auto' : '0'} value=${f[k]} onInput=${e => set(k, e.target.value)}/><span class="unit">${unit}</span></span></label>`;
@@ -270,6 +276,11 @@ function FoodForm({ initial, onSave, onCancel, saveLabel, extra }){
       <div class="field"><span class="label">Weighed</span>
         <div class="seg inset" role="group" aria-label="Weighed raw or cooked">${STATES.map(s => html`<button key=${s[0]} aria-pressed=${String(f.state === s[0])} onClick=${() => set('state', s[0])}>${s[1]}</button>`)}</div>
       </div>
+      <div class="mgrid two">
+        <label class="mfield"><span class="label">Count it by (optional)</span><span class="mbox"><input autocomplete="off" placeholder="egg" value=${f.pieceName} onInput=${e => set('pieceName', e.target.value)}/></span></label>
+        <label class="mfield"><span class="label">One weighs</span><span class="mbox"><input inputmode="decimal" autocomplete="off" placeholder="–" value=${f.piece} onInput=${e => set('piece', e.target.value)}/><span class="unit">g</span></span></label>
+      </div>
+      ${f.piece !== '' && html`<p class="hint">Meals and the log then ask “how many” instead of grams.</p>`}
     </section>
     <section class="card">
       <div class="row-between"><h2 class="card-title">Nutrition</h2>
@@ -341,7 +352,9 @@ function MealsView({ env }){
 function MealEditor({ env, id }){
   const { app } = env;
   const saved = id ? store.get('meals/' + id) : null;
-  const [m, setM] = useState(() => saved ? clone(saved) : { id: null, name: '', tag: 'lunch', items: [] });
+  const [m, setM] = useState(() => { if (!saved) return { id: null, name: '', tag: 'lunch', items: [] };
+    const fm = foodMap(), c = clone(saved);   // counted foods are typed as a count (n); g follows it
+    c.items = c.items.map(it => pieceG(fm[it.foodId]) ? Object.assign(it, { n: g1(it.g / pieceG(fm[it.foodId])) }) : it); return c; });
   const [picking, setPicking] = useState(false);
   const [err, setErr] = useState('');
   if (id && !saved) return html`<div class="stack"><div class="topbar"><button class="link" onClick=${env.close}><${Ico} d=${UI.back} size=${18} sw=${2.6}/>Meals</button><h1>Meal</h1><span></span></div><p class="hint">This meal was deleted.</p></div>`;
@@ -351,10 +364,11 @@ function MealEditor({ env, id }){
   const share = tot.kcal > 0 ? (() => { const a = fromMacros(tot) || 1; return [tot.p * 4 / a, tot.c * 4 / a, tot.fat * 9 / a]; })() : [0, 0, 0];
   const upd = patch => { setM(prev => Object.assign({}, prev, typeof patch === 'function' ? patch(prev) : patch)); setErr(''); };
   const setG = (iid, v) => upd(prev => ({ items: prev.items.map(it => it.id === iid ? Object.assign({}, it, { g: v }) : it) }));
+  const setN = (iid, v, per) => upd(prev => ({ items: prev.items.map(it => it.id === iid ? Object.assign({}, it, { n: v, g: num(v) == null ? '' : String(num(v) * per) }) : it) }));
   const save = () => {
     if (!m.name.trim()){ setErr('Give the meal a name.'); scrollTop(); return; }
     if (!m.items.length){ setErr('Add at least one food.'); return; }
-    if (m.items.some(it => num(it.g) == null || num(it.g) <= 0)){ setErr('Every food needs a weight in grams.'); return; }
+    if (m.items.some(it => num(it.g) == null || num(it.g) <= 0)){ setErr('Every food needs an amount.'); return; }
     const mid = m.id || uid();
     store.set('meals/' + mid, { id: mid, name: m.name.trim(), tag: m.tag, items: m.items.map(it => ({ id: it.id, foodId: it.foodId, g: num(it.g) })), createdAt: m.createdAt || Date.now() });
     env.close(); app.showToast('Meal saved.');
@@ -382,7 +396,8 @@ function MealEditor({ env, id }){
       <div class="list">
         ${m.items.map(it => { const f = foods[it.foodId]; const part = f ? scale(f, num(it.g) || 0) : ZERO; return html`<div key=${it.id} class="ing">
           <span class="col grow"><span class="ing-name">${f ? f.name : 'Deleted food'}${f && f.state && html` <span class="pill">${f.state}</span>`}</span><span class="row-sub">${kc(part.kcal)} kcal · ${macroLine(part)}</span></span>
-          <label class="gbox"><input inputmode="decimal" aria-label=${'Grams of ' + (f ? f.name : 'food')} value=${it.g} onInput=${e => setG(it.id, e.target.value)} onFocus=${e => e.target.select()}/><span>g</span></label>
+          ${pieceG(f) ? html`<label class="gbox"><input inputmode="decimal" aria-label=${'How many: ' + f.name} value=${it.n} onInput=${e => setN(it.id, e.target.value, pieceG(f))} onFocus=${e => e.target.select()}/><span>${pieceWord(f, num(it.n))}</span></label>`
+            : html`<label class="gbox"><input inputmode="decimal" aria-label=${'Grams of ' + (f ? f.name : 'food')} value=${it.g} onInput=${e => setG(it.id, e.target.value)} onFocus=${e => e.target.select()}/><span>g</span></label>`}
           <button class="icon-btn" aria-label=${'Remove ' + (f ? f.name : 'food')} onClick=${() => upd(prev => ({ items: prev.items.filter(x => x.id !== it.id) }))}><${Ico} d=${UI.x} size=${18}/></button>
         </div>`; })}
         ${m.items.length === 0 && html`<p class="hint">No foods yet. Add them with their weight in grams; the totals update as you go.</p>`}
@@ -394,7 +409,7 @@ function MealEditor({ env, id }){
     ${picking && html`<div class="scrim" onClick=${e => { if (e.target === e.currentTarget) setPicking(false); }}>
       <div class="sheet tall" role="dialog" aria-modal="true" aria-label="Add food to meal">
         <div class="row-between"><h2>Add food</h2><button class="icon-btn" aria-label="Close" onClick=${() => setPicking(false)}><${Ico} d=${UI.x}/></button></div>
-        <${FoodFinder} env=${env} withLibrary=${true} onPick=${f => { setPicking(false); upd(prev => ({ items: prev.items.concat([{ id: uid(), foodId: f.id, g: '100' }]) })); }}/>
+        <${FoodFinder} env=${env} withLibrary=${true} onPick=${f => { setPicking(false); upd(prev => ({ items: prev.items.concat([pieceG(f) ? { id: uid(), foodId: f.id, n: '1', g: String(pieceG(f)) } : { id: uid(), foodId: f.id, g: '100' }]) })); }}/>
       </div>
     </div>`}
   </div>`;
@@ -620,7 +635,7 @@ const SLOTS = MEAL_TAGS;
 export const entryMacros = e => e.kind === 'meal' ? { kcal: e.unit.kcal * e.amount, p: e.unit.p * e.amount, c: e.unit.c * e.amount, fat: e.unit.fat * e.amount } : scale(e.unit, e.amount);
 export const dayTotals = date => { const l = store.get('log/' + date); return l ? addUp(l.entries.map(entryMacros)) : ZERO; };
 const PORTIONS = [[0.5, '½'], [1, '1'], [1.5, '1½'], [2, '2']];
-const amountLabel = e => { if (e.kind === 'food') return g1(e.amount) + ' g'; if (e.amount === 1) return ''; const p = PORTIONS.find(x => x[0] === e.amount); return '×' + (p ? p[1] : g1(e.amount)); };
+const amountLabel = e => { if (e.kind === 'food') return e.piece > 0 ? countLabel(e, e.amount) : g1(e.amount) + ' g'; if (e.amount === 1) return ''; const p = PORTIONS.find(x => x[0] === e.amount); return '×' + (p ? p[1] : g1(e.amount)); };
 const dayLabel = (d, today) => d === today ? 'Today' : dayKey(new Date(parseKey(today).getTime() - 864e5)) === d ? 'Yesterday' : fmtShort(d);
 const shiftDay = (d, n) => { const x = parseKey(d); x.setDate(x.getDate() + n); return dayKey(x); };
 
@@ -718,7 +733,8 @@ function AddSheet({ env, slot, close, onLog }){
   <//>`;
   const fromMeal = m => { const unit = mealTotals(m, foods); const mealG = m.items.reduce((a, it) => a + (Number(it.g) || 0), 0);
     setPick({ id: uid(), slot, kind: 'meal', ref: m.id, name: m.name, amount: 1, unit, mealG }); };
-  const fromFood = f => setPick({ id: uid(), slot, kind: 'food', ref: f.id, name: f.name, amount: 100, unit: { kcal: f.kcal, p: f.p, c: f.c, fat: f.fat } });
+  const fromFood = f => setPick(Object.assign({ id: uid(), slot, kind: 'food', ref: f.id, name: f.name, amount: pieceG(f) || 100, unit: { kcal: f.kcal, p: f.p, c: f.c, fat: f.fat } },
+    pieceG(f) ? { piece: pieceG(f), pieceName: f.pieceName || 'piece' } : {}));   // counted foods remember the piece size, so old days never change
   return html`<${Sheet} title=${'Add to ' + name.toLowerCase()} close=${close} tall=${true}>
     <div class="seg inset" role="group" aria-label="What to add">
       <button aria-pressed=${String(tab === 'meals')} onClick=${() => setTab('meals')}>Saved meals</button>
@@ -741,8 +757,10 @@ function PortionPicker({ entry, okLabel, onOk }){
   const [mode, setMode] = useState(meal && !preset ? 'g' : 'x');
   const [x, setX] = useState(entry.amount);
   const [g, setG] = useState(() => meal ? (entry.mealG ? g1(entry.amount * entry.mealG) : '') : g1(entry.amount));
+  const per = !meal && entry.piece > 0 ? entry.piece : 0;   // counted by the piece, like eggs
+  const [n, setN] = useState(() => per ? g1(entry.amount / per) : '');
   const grams = num(g);
-  const amount = !meal ? grams : mode === 'x' ? x : (grams && entry.mealG ? grams / entry.mealG : null);
+  const amount = per ? (num(n) ? num(n) * per : null) : !meal ? grams : mode === 'x' ? x : (grams && entry.mealG ? grams / entry.mealG : null);
   const m = amount ? entryMacros(Object.assign({}, entry, { amount })) : null;
   return html`<div class="stack-sm">
     ${meal && html`<p class="hint">One portion: ${fullLine(entry.unit)}${entry.mealG ? ' (' + g1(entry.mealG) + ' g)' : ''}</p>`}
@@ -750,9 +768,12 @@ function PortionPicker({ entry, okLabel, onOk }){
       ${PORTIONS.map(([v, l]) => html`<button key=${v} class="chip-toggle" aria-pressed=${String(mode === 'x' && x === v)} onClick=${() => { setMode('x'); setX(v); }}>${l}</button>`)}
       ${entry.mealG > 0 && html`<button class="chip-toggle" aria-pressed=${String(mode === 'g')} onClick=${() => setMode('g')}>Grams</button>`}
     </div>`}
-    ${(!meal || mode === 'g') && html`<label class="mfield"><span class="label">${meal ? 'How much of the meal' : 'How much'}</span>
+    ${per > 0 && html`<div class="portions">${[1, 2, 3, 4].map(v => html`<button key=${v} class="chip-toggle" aria-pressed=${String(num(n) === v)} onClick=${() => setN(String(v))}>${v}</button>`)}</div>
+      <label class="mfield"><span class="label">How many</span>
+      <span class="mbox"><input inputmode="decimal" autocomplete="off" value=${n} onInput=${e => setN(e.target.value)} onFocus=${e => e.target.select()}/><span class="unit">${pieceWord(entry, num(n))}</span></span></label>`}
+    ${((!meal && !per) || mode === 'g') && html`<label class="mfield"><span class="label">${meal ? 'How much of the meal' : 'How much'}</span>
       <span class="mbox"><input inputmode="decimal" autocomplete="off" value=${g} onInput=${e => setG(e.target.value)} onFocus=${e => e.target.select()}/><span class="unit">g</span></span></label>`}
-    ${!meal && html`<p class="hint">Per 100 g: ${fullLine(entry.unit)}</p>`}
+    ${!meal && html`<p class="hint">${per ? 'One ' + (entry.pieceName || 'piece') + ' (' + g1(per) + ' g): ' + fullLine(scale(entry.unit, per)) : 'Per 100 g: ' + fullLine(entry.unit)}</p>`}
     <div class="card inset-card"><span class="tot-kcal sm">${m ? kc(m.kcal) : '–'} <small>kcal</small></span><span class="tot-macros">${m ? macroLine(m) : 'Enter an amount'}</span></div>
     <button class="btn btn-pop" disabled=${!amount} onClick=${() => onOk(Object.assign({}, entry, { amount: Math.round(amount * 1000) / 1000 }))}>${okLabel}</button>
   </div>`;
