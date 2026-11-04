@@ -194,8 +194,9 @@ function HistoryView({ env, ui, setUi }){
 }
 
 /* ---------- Routines on the Gym home: Hevy-style cards in collapsible folders ----------
-   gym/folders = { list: [{ id, name }], closed: { folderId|'mine': true } }; a routine's folder is routine.folder (none = My Routines) */
-const foldersDoc = () => Object.assign({ list: [], closed: {} }, store.get('gym/folders') || {});
+   gym/folders = { list: [{ id, name }], closed: { folderId|'mine': true }, order: { folderId|'mine': [routineId] } }; a routine's folder is routine.folder (none = My Routines).
+   list is the folder order. Routines never dragged yet stay alphabetical, after the ones that were. */
+const foldersDoc = () => Object.assign({ list: [], closed: {}, order: {} }, store.get('gym/folders') || {});
 function RoutinesSection({ env, routines, start }){
   const { app } = env;
   const [sheet, setSheet] = useState(null);
@@ -204,8 +205,13 @@ function RoutinesSection({ env, routines, start }){
   const saveFd = patch => store.set('gym/folders', Object.assign({}, fd, patch));
   const toggle = fid => saveFd({ closed: Object.assign({}, fd.closed, { [fid]: !fd.closed[fid] }) });
   const known = new Set(fd.list.map(f => f.id));
-  const groups = [{ id: 'mine', name: 'My Routines', items: routines.filter(r => !r.folder || !known.has(r.folder)) }]
-    .concat(fd.list.map(f => ({ id: f.id, name: f.name, items: routines.filter(r => r.folder === f.id) })));
+  const inOrder = (items, gid) => { const o = fd.order[gid] || [], at = r => { const i = o.indexOf(r.id); return i < 0 ? o.length : i; }; return items.slice().sort((a, b) => at(a) - at(b)); };
+  const groups = [{ id: 'mine', name: 'My Routines', items: inOrder(routines.filter(r => !r.folder || !known.has(r.folder)), 'mine') }]
+    .concat(fd.list.map(f => ({ id: f.id, name: f.name, items: inOrder(routines.filter(r => r.folder === f.id), f.id) })));
+  const grab = (gid, pos) => ev => { ev.preventDefault(); ev.stopPropagation(); setSheet({ kind: 'reorder', gid, start: { pos, y: ev.clientY } }); };
+  const reordering = sheet && sheet.kind === 'reorder' ? sheet : null;
+  const saveRoutineOrder = (g, order) => { saveFd({ order: Object.assign({}, fd.order, { [g.id]: order.map(i => g.items[i].id) }) }); setSheet(null); };
+  const saveFolderOrder = order => { saveFd({ list: order.map(i => fd.list[i]) }); setSheet(null); };
   const nameSheet = (title, initial, ok) => { setName(initial); setSheet({ kind: 'name', title, ok }); };
   const newFolder = () => nameSheet('New folder', '', n => saveFd({ list: fd.list.concat([{ id: uid(), name: n }]) }));
   const routineMenu = r => setSheet({ kind: 'routine', r });
@@ -220,14 +226,16 @@ function RoutinesSection({ env, routines, start }){
         <button class="btn btn-ghost sm card-bg" onClick=${() => env.go({ type: 'routine', id: null })}><${Ico} d=${UI.plus} size=${18} sw=${2.6}/>New routine</button>
         <button class="icon-btn sq" aria-label="New folder" onClick=${newFolder}><${Ico} d=${UI.folderPlus} size=${22}/></button>
       </span></div>
-    ${groups.map(g => html`<div key=${g.id} class="folder">
+    ${groups.filter(g => g.id === 'mine' || !(reordering && reordering.gid === 'folders')).map(g => html`<div key=${g.id} class="folder">
       ${g.id !== 'mine' && html`<div class="folder-head">
+        ${fd.list.length > 1 && html`<button class="grip" aria-label=${'Drag to reorder folder ' + g.name} onPointerDown=${grab('folders', fd.list.findIndex(f => f.id === g.id))}><${Ico} d=${UI.grip} size=${22}/></button>`}
         <button class="folder-t" aria-expanded=${String(!fd.closed[g.id])} onClick=${() => toggle(g.id)}><span class=${'tri' + (fd.closed[g.id] ? ' shut' : '')}>▾</span>${g.name} (${g.items.length})</button>
         <button class="icon-btn" aria-label=${'Options for folder ' + g.name} onClick=${() => folderMenu(g)}><${Ico} d=${UI.dots} size=${20}/></button>
       </div>`}
-      ${(g.id === 'mine' || !fd.closed[g.id]) && html`<div class="list">
-        ${g.items.map(r => html`<div key=${r.id} class="rcard">
-          <div class="row-between"><button class="rcard-t" onClick=${() => env.go({ type: 'routine', id: r.id })}>${r.name}</button>
+      ${reordering && reordering.gid === g.id && html`<${ReorderList} title="Reorder routines" names=${g.items.map(r => r.name)} start=${reordering.start} onDone=${o => saveRoutineOrder(g, o)}/>`}
+      ${(g.id === 'mine' || !fd.closed[g.id]) && !(reordering && reordering.gid === g.id) && html`<div class="list">
+        ${g.items.map((r, pos) => html`<div key=${r.id} class="rcard">
+          <div class="exhead">${g.items.length > 1 && html`<button class="grip" aria-label=${'Drag to reorder ' + r.name} onPointerDown=${grab(g.id, pos)}><${Ico} d=${UI.grip} size=${22}/></button>`}<button class="rcard-t grow" onClick=${() => env.go({ type: 'routine', id: r.id })}>${r.name}</button>
             <button class="icon-btn" aria-label=${'Options for ' + r.name} onClick=${() => routineMenu(r)}><${Ico} d=${UI.dots} size=${22}/></button></div>
           <p class="rcard-ex">${r.items.map(it => exById(it.ex).n).join(', ') || 'No exercises yet'}</p>
           <button class="btn btn-pop" onClick=${() => start(r)}>Start routine</button>
@@ -235,6 +243,7 @@ function RoutinesSection({ env, routines, start }){
         ${g.items.length === 0 && (g.id !== 'mine' || routines.length === 0) && html`<p class="hint">${g.id === 'mine' ? 'Tap the clipboard to save the workouts you repeat, like “Push day”, and start them with one tap.' : 'Empty. Move routines here with their ⋯ menu.'}</p>`}
       </div>`}
     </div>`)}
+    ${reordering && reordering.gid === 'folders' && html`<${ReorderList} title="Reorder folders" names=${fd.list.map(f => f.name)} start=${reordering.start} onDone=${saveFolderOrder}/>`}
     ${sheet && sheet.kind === 'name' && html`<${Sheet} title=${sheet.title} close=${() => setSheet(null)}>
       <input class="input inset" aria-label="Name" placeholder="Like “Upper / Lower”" value=${name} onInput=${e => setName(e.target.value)}/>
       <button class="btn btn-pop" disabled=${!name.trim()} onClick=${() => { sheet.ok(name.trim()); setSheet(null); }}>Save</button>
@@ -461,7 +470,7 @@ function BlockSheets({ env, sheet, setSheet, updEx, remove, back }){
    and the new order is saved on release; opened from the menu, any row can be dragged and Done closes it.
    onDone gets the new order as indexes into the original list. */
 const ROW = 60;
-function ReorderList({ names, onDone, start }){
+function ReorderList({ names, onDone, start, title = 'Reorder exercises' }){
   const [order, setOrder] = useState(() => names.map((_, i) => i));
   const [drag, setDrag] = useState(null);
   const listRef = useRef(null), dragRef = useRef(null), orderRef = useRef(order);
@@ -482,17 +491,19 @@ function ReorderList({ names, onDone, start }){
     window.addEventListener('touchmove', stopScroll, { passive: false });
     return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); window.removeEventListener('touchmove', stopScroll); };
   }, []);
-  /* coming from a card: put the picked exercise right under the finger */
+  /* coming from a card: the cards just shrank to rows, so scroll the picked row's place under the finger
+     (what scrolling can't reach, the row itself makes up) */
   useEffect(() => {
     if (!start || !listRef.current) return;
-    const top = listRef.current.getBoundingClientRect().top;
-    const dy = start.y - (top + start.pos * ROW + 26);
+    const slot = () => listRef.current.getBoundingClientRect().top + start.pos * ROW + 26;
+    window.scrollBy({ top: slot() - start.y, behavior: 'instant' });
+    const dy = start.y - slot();
     const d = { pos: start.pos, y0: start.y - dy, dy };
     dragRef.current = d; setDrag(d);
   }, []);
   const target = drag ? targetOf(drag) : -1;
   return html`<section class="card reorder">
-    <div class="row-between"><h2 class="card-title">Reorder exercises</h2>${!start && html`<button class="btn btn-pop sm" onClick=${() => onDone(orderRef.current)}>Done</button>`}</div>
+    <div class="row-between"><h2 class="card-title">${title}</h2>${!start && html`<button class="btn btn-pop sm" onClick=${() => onDone(orderRef.current)}>Done</button>`}</div>
     ${!start && html`<p class="hint">Press and drag an exercise up or down.</p>`}
     <div class="rlist" ref=${listRef} style=${'height:' + n * ROW + 'px'}>
       ${order.map((orig, pos) => {
@@ -821,7 +832,7 @@ function RoutineEditor({ env, id, seed }){
     if (!r.items.length){ setErr('Add at least one exercise.'); return; }
     if (r.items.some(it => !it.sets.length)){ setErr('Every exercise needs at least one set.'); return; }
     const rid = id || uid();
-    store.set('routines/' + rid, { id: rid, name: r.name.trim(), items: r.items.map(it => ({ ex: it.ex, rest: it.rest, sets: it.sets.map(x => ({ t: x.t, kg: num(x.kg) != null ? num(x.kg) : '', reps: num(x.reps) != null ? num(x.reps) : '' })) })) });
+    store.set('routines/' + rid, { id: rid, name: r.name.trim(), folder: old ? old.folder : undefined, items: r.items.map(it => ({ ex: it.ex, rest: it.rest, sets: it.sets.map(x => ({ t: x.t, kg: num(x.kg) != null ? num(x.kg) : '', reps: num(x.reps) != null ? num(x.reps) : '' })) })) });
     app.showToast('Routine saved.'); env.home();
   };
   return html`<div class="stack">
