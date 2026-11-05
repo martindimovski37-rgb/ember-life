@@ -393,7 +393,6 @@ button:disabled{cursor:default; opacity:.45}
 .wname:focus{background:var(--inset); border-radius:5px}
 .exblock{gap:8px}
 .exname{border:0; background:none; padding:0; text-align:left; color:var(--gold); font-weight:700; font-size:17px; min-height:36px}
-.exname.static{display:flex; align-items:center}
 .exnote{width:100%; border:0; border-radius:8px; background:var(--inset); padding:8px 10px; font-size:16px; font-weight:400; resize:none; overflow:hidden; color:var(--fg); line-height:1.4; min-height:36px}
 .exnote:focus{outline:2px solid var(--link)}
 .restsel{display:inline-flex; align-items:center; gap:6px; align-self:flex-start; font-size:13px; font-weight:650; color:var(--muted)}

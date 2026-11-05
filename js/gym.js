@@ -422,7 +422,7 @@ function WorkoutView({ env, w }){
 
 /* One exercise as a set table. In a workout: SET · PREVIOUS · KG · REPS · RPE · ✓. In a routine: SET · PREVIOUS · KG · REPS,
    where kg and reps are the targets that show up greyed out when the routine is started. */
-function ExerciseBlock({ env, start, e, idx, updEx, tick, setSheet, routine }){
+function ExerciseBlock({ env, start, e, idx, updEx, tick, setSheet, routine, openEx }){
   const ex = exById(e.ex);
   const prev = lastFor(e.ex, routine ? Infinity : start);
   const noteDoc = store.get('exnotes/' + e.ex) || {};
@@ -432,7 +432,7 @@ function ExerciseBlock({ env, start, e, idx, updEx, tick, setSheet, routine }){
   return html`<section class="card exblock">
     <div class="exhead">
       <button class="grip" aria-label="Drag to reorder" onPointerDown=${ev => { ev.preventDefault(); setSheet({ kind: 'reorder', start: { pos: idx, y: ev.clientY } }); }}><${Ico} d=${UI.grip} size=${22}/></button>
-      ${routine ? html`<span class="exname static grow">${ex.n}</span>` : html`<button class="exname grow" onClick=${() => env.go({ type: 'ex', id: e.ex, back: { type: 'workout' } })}>${ex.n}</button>`}
+      <button class="exname grow" onClick=${() => routine ? openEx(e.ex) : env.go({ type: 'ex', id: e.ex, back: { type: 'workout' } })}>${ex.n}</button>
       <button class="icon-btn" aria-label=${'Options for ' + ex.n} onClick=${() => setSheet({ kind: 'exmenu', e, idx })}><${Ico} d=${UI.dots} size=${20}/></button>
     </div>
     <textarea class="exnote" rows="1" placeholder="Add a note for this exercise" value=${note} onInput=${ev => { setNote(ev.target.value); ev.target.style.height = 'auto'; ev.target.style.height = ev.target.scrollHeight + 'px'; }} onBlur=${saveNote}></textarea>
@@ -462,7 +462,7 @@ function ExerciseBlock({ env, start, e, idx, updEx, tick, setSheet, routine }){
 }
 
 /* Set type and exercise menus, shared by workouts and routines */
-function BlockSheets({ env, sheet, setSheet, updEx, remove, back }){
+function BlockSheets({ env, sheet, setSheet, updEx, remove, back, openEx }){
   if (!sheet) return null;
   if (sheet.kind === 'type') return html`<${Sheet} title=${'Set ' + sheet.label} close=${() => setSheet(null)}>
     <div class="list">${TYPES.map(([t, name, l]) => html`<button key=${t} class="act-pick" aria-pressed=${String(sheet.set.t === t)} onClick=${() => { updEx(sheet.eid, ex => { ex.sets.find(x => x.id === sheet.set.id).t = t; }); setSheet(null); }}>
@@ -471,7 +471,7 @@ function BlockSheets({ env, sheet, setSheet, updEx, remove, back }){
   <//>`;
   if (sheet.kind === 'exmenu') return html`<${Sheet} title=${exById(sheet.e.ex).n} close=${() => setSheet(null)}>
     <button class="row-btn" onClick=${() => setSheet({ kind: 'reorder' })}><span class="grow">Reorder exercises</span><${Ico} d=${UI.grip} size=${18}/></button>
-    ${back && html`<button class="row-btn" onClick=${() => { setSheet(null); env.go({ type: 'ex', id: sheet.e.ex, back }); }}>Records, history and how-to</button>`}
+    <button class="row-btn" onClick=${() => { setSheet(null); openEx ? openEx(sheet.e.ex) : env.go({ type: 'ex', id: sheet.e.ex, back }); }}>Records, history and how-to</button>
     <button class="btn btn-danger" onClick=${() => { remove(sheet.e.id); setSheet(null); }}>Remove exercise</button>
   <//>`;
   return null;
@@ -665,9 +665,9 @@ function Bar({ title, back, right }){
 }
 
 /* ---------- Exercise detail: records, chart, history, how-to ---------- */
-function ExerciseDetail({ env, id, back }){
+function ExerciseDetail({ env, id, back, onClose }){
   const ex = exById(id);
-  const goBack = () => back ? env.back(back) : env.home();
+  const goBack = onClose || (() => back ? env.back(back) : env.home());
   const sessions = workoutsList().filter(w => w.exercises.some(e => e.ex === id)).map(w => ({ w, sets: w.exercises.filter(e => e.ex === id).flatMap(e => e.sets).filter(working) }));
   const all = sessions.flatMap(s => s.sets);
   const best = all.reduce((b, s) => ({ kg: Math.max(b.kg, s.kg), orm: Math.max(b.orm, e1rm(s.kg, s.reps)), vol: Math.max(b.vol, s.kg * s.reps), reps: Math.max(b.reps, s.reps) }), { kg: 0, orm: 0, vol: 0, reps: 0 });
@@ -675,7 +675,7 @@ function ExerciseDetail({ env, id, back }){
   const noteDoc = store.get('exnotes/' + id) || {};
   const [note, setNote] = useState(noteDoc.note || '');
   return html`<div class="stack">
-    <${Bar} title="Exercise" back=${goBack} right=${ex.custom ? html`<button class="link" onClick=${() => env.go({ type: 'custom', id })}>Edit</button>` : null}/>
+    <${Bar} title="Exercise" back=${goBack} right=${ex.custom && !onClose ? html`<button class="link" onClick=${() => env.go({ type: 'custom', id })}>Edit</button>` : null}/>
     <section class="card">
       <h2 class="card-title gold">${ex.n}</h2>
       <${ExerciseInfo} ex=${ex}/>
@@ -837,6 +837,13 @@ function RoutineEditor({ env, id, seed }){
   const [r, setR] = useState(() => { const src = normRoutine(old ? clone(old) : Object.assign({ name: '', items: [] }, clone(seed || {}))); return { name: src.name || '', items: src.items.map(toBlock) }; });
   const [sheet, setSheet] = useState(null);
   const [err, setErr] = useState('');
+  /* an exercise opens on top of the editor, which stays underneath so unsaved edits and the scroll spot survive */
+  const [peek, setPeek] = useState(null);
+  const [peeks, setPeeks] = useState(0);
+  const peekY = useRef(null);
+  const openEx = x => { peekY.current = window.scrollY; setPeek(x); };
+  const closeEx = () => { setPeek(null); setPeeks(n => n + 1); };   // new key: the blocks pick up a note edited on the exercise page
+  useLayoutEffect(() => { if (peekY.current == null) return; window.scrollTo(0, peek ? 0 : peekY.current); if (!peek) peekY.current = null; }, [peek]);
   const set = patch => { setR(prev => Object.assign({}, prev, typeof patch === 'function' ? patch(prev) : patch)); setErr(''); };
   const updEx = (eid, fn) => set(prev => ({ items: prev.items.map(it => { if (it.id !== eid) return it; const c = clone(it); fn(c); return c; }) }));
   const save = () => {
@@ -847,12 +854,12 @@ function RoutineEditor({ env, id, seed }){
     store.set('routines/' + rid, { id: rid, name: r.name.trim(), folder: old ? old.folder : undefined, items: r.items.map(it => ({ ex: it.ex, rest: it.rest, sets: it.sets.map(x => ({ t: x.t, kg: num(x.kg) != null ? num(x.kg) : '', reps: num(x.reps) != null ? num(x.reps) : '' })) })) });
     app.showToast('Routine saved.'); env.home();
   };
-  return html`<div class="stack">
+  return html`${peek && html`<${ExerciseDetail} key=${peek} env=${env} id=${peek} onClose=${closeEx}/>`}<div class="stack" hidden=${!!peek}>
     <div class="topbar"><button class="link" onClick=${env.home}><${Ico} d=${UI.back} size=${18} sw=${2.6}/>Cancel</button><h1>${id ? 'Edit routine' : 'New routine'}</h1><button class="link" onClick=${save}>Save</button></div>
     <input class="input meal-name" aria-label="Routine name" placeholder="Routine name, like “Push day”" value=${r.name} onInput=${e => set({ name: e.target.value })}/>
     ${err && html`<p class="status bad">${err}</p>`}
     ${sheet && sheet.kind === 'reorder' && html`<${ReorderList} names=${r.items.map(it => exById(it.ex).n)} start=${sheet.start} onDone=${order => { set(prev => ({ items: order.map(i => prev.items[i]) })); setSheet(null); }}/>`}
-    <div class="blocks" hidden=${!!(sheet && sheet.kind === 'reorder')}>${r.items.map((e, i) => html`<${ExerciseBlock} key=${e.id} env=${env} e=${e} idx=${i} updEx=${updEx} setSheet=${setSheet} routine=${true}/>`)}</div>
+    <div key=${peeks} class="blocks" hidden=${!!(sheet && sheet.kind === 'reorder')}>${r.items.map((e, i) => html`<${ExerciseBlock} key=${e.id} env=${env} e=${e} idx=${i} updEx=${updEx} setSheet=${setSheet} routine=${true} openEx=${openEx}/>`)}</div>
     ${r.items.length === 0 && html`<section class="card"><p class="hint">Add the exercises for this routine. Set the number of sets, and optionally the kg and reps to aim for. When you start it, your numbers from last time show up next to each set.</p></section>`}
     <button class="btn btn-solid" onClick=${() => setSheet({ kind: 'pick' })}>+ Add exercises</button>
     <button class="btn btn-pop" onClick=${save}>Save routine</button>
@@ -861,7 +868,7 @@ function RoutineEditor({ env, id, seed }){
       set(prev => ({ items: prev.items.concat(ids.map(x => { const last = lastFor(x, Infinity);
         const sets = last.length ? last.map(z => ({ t: z.t, kg: '', reps: '' })) : [1, 2, 3].map(() => ({ t: 'n', kg: '', reps: '' }));
         return toBlock({ ex: x, rest: (store.get('exnotes/' + x) || {}).rest, sets }); })) })); }}/>`}
-    <${BlockSheets} env=${env} sheet=${sheet} setSheet=${setSheet} updEx=${updEx} remove=${eid => set(prev => ({ items: prev.items.filter(it => it.id !== eid) }))}/>
+    <${BlockSheets} env=${env} sheet=${sheet} setSheet=${setSheet} updEx=${updEx} remove=${eid => set(prev => ({ items: prev.items.filter(it => it.id !== eid) }))} openEx=${openEx}/>
   </div>`;
 }
 
