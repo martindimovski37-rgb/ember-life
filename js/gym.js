@@ -5,7 +5,7 @@
          exercises/<id> = custom exercise { id, n, p, s, e, desc, photo, custom: true }
          exnotes/<exId> = { note, rest }   (sticky per exercise)
    Set types: n normal, w warm-up, f failure, d drop set. Warm-ups never count for records or muscle sets. */
-import { html, useState, useEffect, useRef, Ico, UI, uid, clone, plural, scrollTop, dayKey, parseKey, fmtShort, fmtMonth, weekStartKey } from './lib.js';
+import { html, useState, useEffect, useLayoutEffect, useRef, Ico, UI, uid, clone, plural, scrollTop, dayKey, parseKey, fmtShort, fmtMonth, weekStartKey } from './lib.js';
 import { store } from './store.js';
 import { BodyMap, MUSCLE_NAMES } from './bodymap.js';
 
@@ -75,11 +75,22 @@ function muscleSets(from, to){
 const shiftDay = (d, n) => { const x = parseKey(d); x.setDate(x.getDate() + n); return dayKey(x); };
 
 /* ---------- Gym tab ---------- */
+/* where each screen was left, so going back lands there instead of at the top */
+const scrollMemo = {};
+const viewKey = (v, sub) => v ? v.type + ':' + (v.id || '') : 'home:' + sub;
+let libMemo = null;   // the Exercises list's search, filter and length, kept the same way
 export function GymTab({ app, ui, setUi }){
   const lib = useLib();
   const v = ui.gview;
-  const go = x => { setUi({ gview: x }); scrollTop(); };
-  const env = { app, go, home: () => go(null) };
+  const restoreTo = useRef(null);
+  useLayoutEffect(() => { if (restoreTo.current != null){ window.scrollTo(0, restoreTo.current); restoreTo.current = null; } });
+  const nav = (x, isBack) => {
+    const s = ui.gsub || 'workout';
+    scrollMemo[viewKey(v, s)] = window.scrollY;
+    setUi({ gview: x });
+    if (isBack) restoreTo.current = scrollMemo[viewKey(x, s)] || 0; else scrollTop();
+  };
+  const env = { app, go: x => nav(x), back: x => nav(x, true), home: () => nav(null, true) };
   const active = store.get('gym/active');
   if (!lib) return html`<div class="stack"><header class="head"><h1>Gym</h1></header><section class="card"><p class="hint">Loading exercises…</p></section></div>`;
   if (v && v.type === 'workout' && active) return html`<${WorkoutView} env=${env} w=${active}/>`;
@@ -93,7 +104,7 @@ export function GymTab({ app, ui, setUi }){
   return html`<div class="stack">
     <header class="head"><h1 class="grow">Gym</h1></header>
     <div class="seg" role="group" aria-label="Gym section">
-      ${GSUBS.map(([k, l]) => html`<button key=${k} aria-pressed=${String(sub === k)} onClick=${() => { setUi({ gsub: k, gview: null }); scrollTop(); }}>${l}</button>`)}
+      ${GSUBS.map(([k, l]) => html`<button key=${k} aria-pressed=${String(sub === k)} onClick=${() => { libMemo = null; setUi({ gsub: k, gview: null }); scrollTop(); }}>${l}</button>`)}
     </div>
     ${sub === 'history' ? html`<${HistoryView} env=${env} ui=${ui} setUi=${setUi}/>` : sub === 'exercises' ? html`<${LibraryList} env=${env}/>` : html`<${GymHome} env=${env} active=${active}/>`}
   </div>`;
@@ -656,7 +667,7 @@ function Bar({ title, back, right }){
 /* ---------- Exercise detail: records, chart, history, how-to ---------- */
 function ExerciseDetail({ env, id, back }){
   const ex = exById(id);
-  const goBack = () => back ? env.go(back) : env.home();
+  const goBack = () => back ? env.back(back) : env.home();
   const sessions = workoutsList().filter(w => w.exercises.some(e => e.ex === id)).map(w => ({ w, sets: w.exercises.filter(e => e.ex === id).flatMap(e => e.sets).filter(working) }));
   const all = sessions.flatMap(s => s.sets);
   const best = all.reduce((b, s) => ({ kg: Math.max(b.kg, s.kg), orm: Math.max(b.orm, e1rm(s.kg, s.reps)), vol: Math.max(b.vol, s.kg * s.reps), reps: Math.max(b.reps, s.reps) }), { kg: 0, orm: 0, vol: 0, reps: 0 });
@@ -740,9 +751,10 @@ function LibraryView({ env }){
   return html`<div class="stack"><${Bar} title="Exercises" back=${env.home} right=${html`<button class="link" onClick=${() => env.go({ type: 'custom', id: null })}>+ Custom</button>`}/><${LibraryList} env=${env}/></div>`;
 }
 function LibraryList({ env }){
-  const [q, setQ] = useState('');
-  const [mus, setMus] = useState('');
-  const [limit, setLimit] = useState(80);
+  const [q, setQ] = useState(libMemo ? libMemo.q : '');
+  const [mus, setMus] = useState(libMemo ? libMemo.mus : '');
+  const [limit, setLimit] = useState(libMemo ? libMemo.limit : 80);
+  libMemo = { q, mus, limit };
   const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const done = new Set(); store.list('workouts/').forEach(w => w.exercises.forEach(e => done.add(e.ex)));
   const list = allExercises().filter(x => (!mus || x.p.includes(mus)) && words.every(wd => (x.n + ' ' + (x.a || '')).toLowerCase().includes(wd)))

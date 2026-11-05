@@ -1,6 +1,6 @@
 /* Shared building blocks: Preact + htm, icons, colors, dates. */
 import { afterSplash } from './fx.js';
-export const { html, render, useState, useEffect, useRef, useMemo, useCallback } = window.htmPreact;
+export const { html, render, useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } = window.htmPreact;
 
 /* ---------- Category palette & icons (kept from Day Planner so saved plans keep their look) ---------- */
 /* Category colours: one warm "fire" family (Ember Theme). Values are CSS variables so dark mode can brighten them. */
