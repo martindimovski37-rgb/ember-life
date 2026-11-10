@@ -639,6 +639,34 @@ const amountLabel = e => { if (e.kind === 'food') return e.piece > 0 ? countLabe
 const dayLabel = (d, today) => d === today ? 'Today' : dayKey(new Date(parseKey(today).getTime() - 864e5)) === d ? 'Yesterday' : fmtShort(d);
 const shiftDay = (d, n) => { const x = parseKey(d); x.setDate(x.getDate() + n); return dayKey(x); };
 
+/* ---------- Meal plan (a delivery service like Fit Meals) ----------
+   mealplan/config = { on, name, from: first date, days: weekdays it delivers (1 = Mon … 5 = Fri), slots: { breakfast: {kcal,p,c,fat}, … } }
+   mealplan/menu/<date> = { breakfast: 'dish', lunch: 'dish', dinner: 'dish' } (optional: without it the row says "Fit Meals breakfast")
+   Planned meals show in the log with a tick. Ticking logs them as normal entries (entry.planId), so totals, rings and history just work. */
+export function plannedFor(date){
+  const cfg = store.get('mealplan/config');
+  if (!cfg || !cfg.on || !cfg.slots || (cfg.from && date < cfg.from)) return [];
+  const menu = store.get('mealplan/menu/' + date);
+  if (!menu && !(cfg.days || []).includes(parseKey(date).getDay())) return [];
+  return SLOTS.filter(([s]) => cfg.slots[s]).map(([s, n]) => ({
+    pid: 'plan:' + s, slot: s, source: cfg.name || 'Meal plan',
+    name: (menu && menu[s]) || (cfg.name || 'Planned') + ' ' + n.toLowerCase(), unit: cfg.slots[s] }));
+}
+
+export function MealPlanCard(){
+  const cfg = store.get('mealplan/config');
+  if (!cfg) return null;
+  const tot = addUp(SLOTS.filter(([s]) => cfg.slots && cfg.slots[s]).map(([s]) => cfg.slots[s]));
+  return html`<section class="card">
+    <h2 class="card-title">Meal plan</h2>
+    <button class="switch-row inset" aria-pressed=${String(!!cfg.on)} onClick=${() => store.set('mealplan/config', Object.assign({}, cfg, { on: !cfg.on }))}>
+      <span class="col grow"><span class="row-title">${cfg.name}</span><span class="row-sub wrap">${fullLine(tot)} a day</span></span>
+      <span class=${'switch' + (cfg.on ? ' on' : '')}><span class="knob"></span></span>
+    </button>
+    <p class="hint">Your ${cfg.name} meals appear in the Diet log on delivery days. Tick each one when you've eaten it.</p>
+  </section>`;
+}
+
 function MacroBar({ label, val, target, unit, cls }){
   const pct = target > 0 ? Math.min(100, val / target * 100) : 0;
   const over = target > 0 && val > target * 1.1;
@@ -660,6 +688,13 @@ function LogView({ env, ui, setUi }){
   const tot = addUp(log.entries.map(entryMacros));
   const saveLog = next => { if (!next.entries.length && !next.training) store.del('log/' + date); else store.set('log/' + date, next); };
   const left = target.kcal - tot.kcal;
+  const planned = plannedFor(date);
+  const togglePlan = (p, e) => {
+    if (e){
+      const before = log; saveLog(Object.assign({}, log, { entries: log.entries.filter(x => x.id !== e.id) }));
+      app.showToast(p.name + ' unticked.', { label: 'Undo', run: () => store.set('log/' + date, before) });
+    } else saveLog(Object.assign({}, log, { date, entries: log.entries.concat([{ id: uid(), slot: p.slot, kind: 'meal', ref: p.pid, planId: p.pid, name: p.name, amount: 1, unit: clone(p.unit), mealG: 0 }]) }));
+  };
   return html`
     <div class="daynav">
       <button class="icon-btn" aria-label="Previous day" onClick=${() => setDate(shiftDay(date, -1))}><${Ico} d=${UI.back}/></button>
@@ -686,10 +721,20 @@ function LogView({ env, ui, setUi }){
       ${target.kcal > 0 && html`<button class="link sm-link" onClick=${() => setSheet({ kind: 'targets' })}>Edit targets</button>`}
     </section>
     ${SLOTS.map(([slot, name]) => {
-      const list = log.entries.filter(e => e.slot === slot);
-      const st = addUp(list.map(entryMacros));
+      const inSlot = log.entries.filter(e => e.slot === slot);
+      const st = addUp(inSlot.map(entryMacros));
+      const plan = planned.filter(p => p.slot === slot);
+      const list = inSlot.filter(e => !(e.planId && planned.some(p => p.pid === e.planId)));
       return html`<section key=${slot} class="slot">
-        <div class="slot-head"><h2 class="label">${name}</h2>${list.length > 0 && html`<span class="slot-sum">${fullLine(st)}</span>`}</div>
+        <div class="slot-head"><h2 class="label">${name}</h2>${inSlot.length > 0 && html`<span class="slot-sum">${fullLine(st)}</span>`}</div>
+        ${plan.map(p => { const e = log.entries.find(x => x.planId === p.pid), on = !!e;
+          return html`<div key=${p.pid} class=${'plan-row' + (on ? ' on' : '')}>
+            <button class=${'tick' + (on ? ' on' : '')} aria-pressed=${String(on)} aria-label=${(on ? 'Mark not eaten: ' : 'Mark eaten: ') + p.name} onClick=${() => togglePlan(p, e)}>${on && html`<${Ico} d=${UI.check} size=${16} sw=${3.4}/>`}</button>
+            <button class="plan-main" onClick=${() => e ? setSheet({ kind: 'entry', entry: e }) : togglePlan(p, e)}>
+              <span class="entry-name">${p.name}${e && amountLabel(e) && html` <span class="amt">${amountLabel(e)}</span>`}</span>
+              <span class="entry-sub">${on ? 'Eaten' : 'Planned'} · ${p.source} · ${fullLine(e ? entryMacros(e) : p.unit)}</span>
+            </button>
+          </div>`; })}
         ${list.map(e => { const m = entryMacros(e); return html`<button key=${e.id} class="entry" onClick=${() => setSheet({ kind: 'entry', entry: e })}>
           <span class="entry-name">${e.name}${amountLabel(e) && html` <span class="amt">${amountLabel(e)}</span>`}</span>
           <span class="entry-sub">${fullLine(m)}</span>

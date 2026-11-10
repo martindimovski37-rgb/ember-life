@@ -2,7 +2,7 @@
 import { html, useState, useEffect, useRef, Ico, UI, Ring, Count, dayKey, parseKey, weekStartKey, fmtLong, plural, scrollTop, tint } from './lib.js';
 import { store, sync, deviceGet, deviceSet } from './store.js';
 import { plannerCtx, PlannerTab, RequiredSheet } from './planner.js';
-import { DietTab, TargetsForm, dayTotals, targetsFor, kc, g1 } from './diet.js';
+import { DietTab, TargetsForm, MealPlanCard, dayTotals, targetsFor, kc, g1 } from './diet.js';
 import { GymTab, WorkoutBar, workoutsList, SOUNDS, playSound } from './gym.js';
 import { EmberView } from './ember.js';
 import { VOICES, emberVoice, createMouth, unlockAudio } from './voice.js';
@@ -10,7 +10,7 @@ import { voiceDownloaded, loadVoice, removeVoice, downloadedKind, bestKind, down
 import { AI_MODELS, aiModel, claude, aiError } from './claude.js';
 import { pageFade } from './fx.js';
 
-export const VERSION = '1.39';
+export const VERSION = '1.40';
 const TABS = [['today', 'Today', UI.sun], ['planner', 'Planner', UI.grid], ['diet', 'Diet', UI.diet], ['gym', 'Gym', UI.gym], ['ember', 'Ember', UI.spark], ['settings', 'Settings', UI.gear]];
 const ALL_TABS = TABS.map(t => t[0]);
 
@@ -267,6 +267,7 @@ function SettingsView({ app }){
       <h2 class="card-title">Daily targets</h2>
       <${TargetsForm} onSaved=${() => showToast('Targets saved.')}/>
     </section>
+    <${MealPlanCard}/>
     <${SyncCard} showToast=${showToast}/>
     <${BackupCard} app=${app}/>
     <${KeysCard} showToast=${showToast}/>
