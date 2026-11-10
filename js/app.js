@@ -68,7 +68,9 @@ export function App(){
     <div class="shell">
       <nav class="rail" aria-label="Sections">
         <div class="brand"><img src="icons/icon.svg" alt=""/>Ember Life</div>
-        ${TABS.map(t => html`<button key=${t[0]} aria-current=${tab === t[0] ? 'page' : null} onClick=${() => go(t[0])}><${Ico} d=${t[2]} size=${19}/>${t[1]}</button>`)}
+        <div class="rbar"><div class="rtabs" style=${'--i:' + Math.max(0, TABS.findIndex(t => t[0] === tab))}><span class="rpill" aria-hidden="true"></span>
+          ${TABS.map(t => html`<button key=${t[0]} aria-current=${tab === t[0] ? 'page' : null} onClick=${() => go(t[0])}><${Ico} d=${t[2]} size=${20}/>${t[1]}</button>`)}
+        </div></div>
       </nav>
       <main class="main">${body}</main>
     </div>
@@ -128,7 +130,7 @@ function TodayView({ app }){
   return html`<div class="stack">
     <header class="head">
       ${sync.state === 'error' && html`<button class="icon-btn head-sync" aria-label="Sync problem, open Settings" style="color:var(--danger)" onClick=${() => go('settings')}><${Ico} d=${UI.sync}/></button>`}
-      <h1>${fmtLong(today)}</h1>
+      <h1>${(() => { const d = parseKey(today); return html`${d.toLocaleDateString(undefined, { weekday: 'long' })}<span class="h-comma">, </span><span class="h-date">${d.toLocaleDateString(undefined, { month: 'long', day: 'numeric' })}</span>`; })()}</h1>
     </header>
 
     <div class="tcards" style=${'--tc-reserve:' + reserve}>

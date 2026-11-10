@@ -289,19 +289,31 @@ button:disabled{cursor:default; opacity:.45}
 @media (min-width:600px){ .scrim{align-items:center} }
 
 /* ---------- Mac / wide ---------- */
+/* Wide screens: the logo, then the same six tabs as the iPhone in a bar along the top with a highlight that slides
+   to the open tab. The tab bar stays in view while the page scrolls under it. The scrollbar's space is always kept,
+   so switching between short and long pages never shifts anything sideways. */
+:root{--tabs-top:10px}
 @media (min-width:960px){
-  .shell{max-width:1040px; display:grid; grid-template-columns:200px minmax(0, 1fr); gap:32px; padding-block:28px 120px; align-items:start}
-  .rail{display:flex; flex-direction:column; gap:4px; position:sticky; top:28px}
-  .brand{display:flex; align-items:center; gap:10px; padding:0 8px 16px; font-weight:700; font-size:18px}
-  .brand img{width:34px; height:34px; border-radius:5px}
-  .rail button{min-height:44px; padding:0 12px; border:0; border-radius:8px; background:transparent; color:var(--muted); font-weight:650; font-size:15px; text-align:left; display:flex; align-items:center; gap:10px}
-  .rail button:hover:not([aria-current="page"]){background:var(--inset)}
-  .rail button[aria-current="page"]{background:var(--card); color:var(--accent)}
+  html{scrollbar-gutter:stable}
+  @supports not (scrollbar-gutter:stable){ html{overflow-y:scroll} }
+  body::before{height:var(--tabs-top)}   /* the top strip only covers the gap above the tab bar here */
+  .shell{max-width:808px; margin:0 auto; display:block; padding:28px 24px 120px}
+  .main{max-width:none}
+  .rail{display:contents}
+  .rail .brand{display:flex; align-items:center; gap:12px; margin-bottom:18px; font-weight:700; font-size:21px; letter-spacing:-.01em; color:var(--fg)}
+  .rail .brand img{width:44px; height:44px; border-radius:11px}
+  .rbar{position:sticky; top:var(--tabs-top); z-index:16; background:var(--bg); box-shadow:0 calc(-1 * var(--tabs-top)) 0 var(--bg); margin:0 -24px; padding:0 24px 12px}
+  .rtabs{position:relative; display:grid; grid-template-columns:repeat(6, minmax(0, 1fr)); padding:4px; border-radius:12px; background:var(--card); box-shadow:inset 0 0 0 1px var(--card-line)}
+  .rpill{position:absolute; top:4px; bottom:4px; left:4px; width:calc((100% - 8px) / 6); border-radius:9px; background:var(--pop);
+    transform:translateX(calc(var(--i, 0) * 100%)); transition:transform .34s cubic-bezier(.3, .9, .3, 1)}
+  .rtabs button{position:relative; min-height:56px; border:0; border-radius:9px; background:transparent; color:var(--muted); font-weight:650; font-size:12.5px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; transition:color .2s}
+  .rtabs button:hover:not([aria-current="page"]){color:var(--fg)}
+  .rtabs button[aria-current="page"]{color:var(--on-pop)}
   .tabbar{display:none}
-  .setbar{left:264px; bottom:24px}
+  .setbar{bottom:24px}
   .toast{bottom:32px}
   .tiles{grid-template-columns:repeat(auto-fill, minmax(150px, 1fr))}
-  .main{max-width:720px}
 }
 @media (prefers-reduced-motion: reduce){ *{transition:none !important} }
 .ing .row-sub{white-space:normal}
@@ -418,7 +430,7 @@ button:disabled{cursor:default; opacity:.45}
 .wbar{position:fixed; left:50%; transform:translateX(-50%); bottom:calc(70px + env(safe-area-inset-bottom, 0px)); z-index:19; width:min(560px, calc(100% - 24px)); display:flex; align-items:center; gap:10px; min-height:48px; padding:0 16px; border:0; border-radius:8px; background:var(--accent); color:var(--on-accent); font-weight:700; box-shadow:var(--shadow)}
 .wdot{width:9px; height:9px; border-radius:50%; background:currentColor; animation:pulse 1.6s infinite}
 @keyframes pulse{50%{opacity:.3}}
-@media (min-width:960px){ .restbar,.wbar{left:calc(50% + 100px); bottom:24px} }
+@media (min-width:960px){ .restbar,.wbar{bottom:24px} }
 
 .filters{display:flex; gap:8px}
 .filters select{font-size:16px; flex:1; min-width:0; min-height:42px; border:0; border-radius:8px; background:var(--inset); padding:0 10px; font-weight:650; color:var(--fg)}
@@ -665,7 +677,23 @@ b,.stype,.link,.left,.goal-t,.streak,.wbar,.kcal-n{font-weight:650}
 .tc-day.on i{background:var(--ring-gym)}
 .tc-day.today{color:var(--fg); font-weight:650}
 .tc-day.today i{box-shadow:0 0 0 2px var(--card), 0 0 0 3.5px var(--fg)}
-@media (min-width:960px){ .tcards{height:auto; min-height:0} .tcard{min-height:180px} }
+@media (min-width:960px){
+  .tcards{height:auto; min-height:0}
+  .tcard{min-height:196px}
+  /* sticky bits stop under the tab bar */
+  .totals{top:calc(var(--tabs-top) + 84px)}
+  .wtop{top:calc(var(--tabs-top) + 76px)}
+  /* page titles: big and on the left, with breathing room before the first card */
+  .head{height:auto; min-height:0; justify-content:flex-start; margin:16px 0 8px}
+  .head h1{font-size:28px; font-weight:700; line-height:1.15; text-align:left}
+  .head .head-sync{position:static; transform:none; order:2}
+  .h-date{display:block; margin-top:4px; font-size:14px; font-weight:400; color:var(--muted); letter-spacing:0}
+  .h-comma{display:none}
+  .stack{gap:18px}
+  .card{padding:18px 20px; gap:12px}
+  .tcards{gap:22px}
+  .tcard{padding:22px 24px; gap:20px}
+}
 
 /* Diet log: the goal line is a quiet note, not a banner */
 .goal.slim{flex-direction:row; align-items:center; gap:7px; padding:0; background:none; color:var(--muted)}
@@ -822,3 +850,8 @@ body.ember-on .tab[aria-current="page"]{color:#E0303A}
 .plan-row .tick.on{background:var(--grad, var(--accent)); border-color:transparent}
 .plan-main{flex:1; min-width:0; display:flex; flex-direction:column; align-items:flex-start; gap:2px; border:0; background:none; padding:0; text-align:left; color:inherit; font:inherit; cursor:pointer}
 .plan-row:not(.on) .entry-name{color:var(--muted)}
+
+/* Inside the Ember Life Mac app the page runs under the window's title bar: the tab bar stops below the window
+   buttons, and the top strip (body::before) keeps scrolled content from showing behind the title bar. */
+:root.macapp{--top-clear:32px; --tabs-top:34px}
+@media (min-width:960px){ .macapp .shell{padding-top:40px} }
