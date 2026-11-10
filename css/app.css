@@ -302,7 +302,7 @@ button:disabled{cursor:default; opacity:.45}
   .rail{display:contents}
   .rail .brand{display:flex; align-items:center; gap:12px; margin-bottom:18px; font-weight:700; font-size:21px; letter-spacing:-.01em; color:var(--fg)}
   .rail .brand img{width:44px; height:44px; border-radius:11px}
-  .rbar{position:sticky; top:var(--tabs-top); z-index:16; background:var(--bg); box-shadow:0 calc(-1 * var(--tabs-top)) 0 var(--bg); margin:0 -24px; padding:0 24px 12px}
+  .rbar{position:sticky; top:var(--tabs-top); z-index:16; background:var(--bg); margin:0 -24px; padding:0 24px 12px}
   .rtabs{position:relative; display:grid; grid-template-columns:repeat(6, minmax(0, 1fr)); padding:4px; border-radius:12px; background:var(--card); box-shadow:inset 0 0 0 1px var(--card-line)}
   .rpill{position:absolute; top:4px; bottom:4px; left:4px; width:calc((100% - 8px) / 6); border-radius:9px; background:var(--pop);
     transform:translateX(calc(var(--i, 0) * 100%)); transition:transform .34s cubic-bezier(.3, .9, .3, 1)}
