@@ -10,7 +10,7 @@ import { voiceDownloaded, loadVoice, removeVoice, downloadedKind, bestKind, down
 import { AI_MODELS, aiModel, claude, aiError } from './claude.js';
 import { pageFade } from './fx.js';
 
-export const VERSION = '1.40';
+export const VERSION = '1.41';
 const TABS = [['today', 'Today', UI.sun], ['planner', 'Planner', UI.grid], ['diet', 'Diet', UI.diet], ['gym', 'Gym', UI.gym], ['ember', 'Ember', UI.spark], ['settings', 'Settings', UI.gear]];
 const ALL_TABS = TABS.map(t => t[0]);
 
