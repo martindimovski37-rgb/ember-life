@@ -855,3 +855,26 @@ body.ember-on .tab[aria-current="page"]{color:#E0303A}
    buttons, and the top strip (body::before) keeps scrolled content from showing behind the title bar. */
 :root.macapp{--top-clear:32px; --tabs-top:34px}
 @media (min-width:960px){ .macapp .shell{padding-top:40px} }
+
+/* Muscle split (workout history, routine page) */
+.split{display:flex; align-items:center; gap:16px}
+.split-bars{flex:1; min-width:0; display:flex; flex-direction:column; gap:10px}
+.split-row{display:flex; flex-direction:column; gap:5px}
+.split-name{font-weight:650; font-size:15px}
+.split-pct{color:var(--muted); font-size:14px; font-variant-numeric:tabular-nums}
+.split-map{flex:none; display:flex; justify-content:center}
+.split-map .bodymaps{gap:4px}
+@media (max-width:420px){ .split{flex-direction:column; align-items:stretch} }
+
+/* Routine page */
+.rv-name{font-size:22px}
+.rv-head{gap:10px; align-items:center}
+.rv-val{display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; min-width:0}
+.rv-val b{font-size:20px; font-variant-numeric:tabular-nums}
+.rv-range{flex:none; min-height:40px; border:0; border-radius:8px; padding:0 10px; background:var(--inset); color:var(--fg); font:inherit; font-weight:650; font-size:14px}
+.rv-from{display:flex; align-items:center; gap:10px}
+.rv-from .input{flex:1; min-height:40px}
+.rv-empty{padding:22px 0; text-align:center}
+.rchart .rgrid{stroke:var(--line); stroke-width:1}
+.rchart .rdot{cursor:pointer}
+.rv-ex{display:flex; align-items:center; gap:12px; border:0; background:none; padding:0; text-align:left; color:inherit; font:inherit; cursor:pointer}
