@@ -371,6 +371,11 @@ function WorkoutView({ env, w }){
   const restLeft = w.restEnd ? (w.restEnd - Date.now()) / 1000 : 0;
   useEffect(() => { if (w.restEnd && restLeft <= 0 && restLeft > -2){ beep(); upd(c => { c.restEnd = 0; }); } });
   const doneSets = w.exercises.reduce((a, e) => a + e.sets.filter(s => s.done).length, 0);
+  const allSets = w.exercises.reduce((a, e) => a + e.sets.length, 0);
+  /* reps: done so far, out of what the routine aims for (typed reps, else the routine's target), warm-ups left out */
+  const workSets = w.exercises.flatMap(e => e.sets.filter(s => s.t !== 'w'));
+  const repsDone = workSets.filter(s => s.done).reduce((a, s) => a + (num(s.reps) || 0), 0);
+  const repsAim = workSets.reduce((a, s) => a + (num(s.reps) || num(s.tr) || 0), 0);
   const vol = w.exercises.reduce((a, e) => a + e.sets.filter(s => s.done && s.t !== 'w').reduce((b, s) => b + (num(s.kg) || 0) * (num(s.reps) || 0), 0), 0);
 
   const tick = (e, s, prev) => {
@@ -396,7 +401,7 @@ function WorkoutView({ env, w }){
     <div class="wtop">
       <button class="icon-btn" aria-label="Back to Gym" onClick=${env.home}><${Ico} d=${UI.down}/></button>
       <div class="grow col"><input class="wname" aria-label="Workout name" value=${w.name} onInput=${e => upd(c => { c.name = e.target.value; })}/>
-        <span class="cat-sub">${clock((Date.now() - w.start) / 1000)} · ${fmtT(vol)} · ${plural(doneSets, 'set', 'sets')}</span></div>
+        <span class="cat-sub">${clock((Date.now() - w.start) / 1000)} · ${fmtT(vol)} · ${doneSets}/${allSets} sets · ${repsDone}${repsAim > repsDone ? '/' + repsAim : ''} reps</span></div>
       <button class="btn btn-pop sm" onClick=${() => app.setSheet({ kind: 'confirm', title: 'Finish workout?', ok: 'Finish', run: finish,
         text: open ? plural(open, 'set isn’t', 'sets aren’t') + ' ticked off and won’t be saved.' : 'Saves it to your history and checks for new records.' })}>Finish</button>
     </div>
